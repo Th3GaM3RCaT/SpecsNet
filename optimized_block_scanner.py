@@ -10,6 +10,8 @@ Ejemplo:
   python3 optimized_block_scanner.py --start 100 --end 119 --use-broadcast-probe
 
 """
+
+
 import argparse
 import asyncio
 import ipaddress
@@ -336,8 +338,8 @@ async def scan_blocks(start, end, chunk_size, per_host_timeout, per_subnet_timeo
             seen.add(str(b))
             final_blocks.append(b)
 
-        # Also test a few "typical" single IP probes: .1, .50, .100
-        typical_ips = [f"10.{second}.1", f"10.{second}.50", f"10.{second}.100"]
+        # Also test a few "typical" single IP probes: .0.1, .0.50, .0.100
+        typical_ips = [f"10.{second}.0.1", f"10.{second}.0.50", f"10.{second}.0.100"]
 
         # 1) Probe typical single IPs (fast)
         for tip in typical_ips:
@@ -441,6 +443,12 @@ def parse_arp_table_raw_fallback():
 
 # ------------------ ENTRYPOINT ------------------
 def main():
+    # Timestamp de inicio
+    start_time = time.time()
+    start_datetime = datetime.now()
+    print(f"🕐 Inicio del escaneo: {start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
+    
     args = parse_args()
     try:
         local_super = get_local_supernet()
@@ -471,6 +479,19 @@ def main():
         for ip, mac in merged:
             w.writerow([ip, mac or ""])
     print("CSV saved:", csv_name)
+    
+    # Timestamp de finalización
+    end_time = time.time()
+    end_datetime = datetime.now()
+    elapsed_seconds = end_time - start_time
+    
+    print("=" * 60)
+    print(f"🕐 Fin del escaneo: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏱️  TIEMPO TOTAL DE EJECUCIÓN: {elapsed_seconds:.2f} segundos ({elapsed_seconds/60:.2f} minutos)")
+    print("=" * 60)
+    
+    # Pausa de 3 segundos para que puedas ver el resultado
+    time.sleep(3)
 
 if __name__ == "__main__":
     main()
