@@ -6,6 +6,7 @@ from threading import Thread
 from datetime import datetime
 import csv
 import re
+import asyncio
 
 from PySide6.QtWidgets import QApplication
 from logica_Hilo import Hilo
@@ -440,75 +441,129 @@ def solicitar_datos_a_cliente(ip, timeout_seg=5):
 
 def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
     """
-    Consulta todos los dispositivos del CSV y solicita sus datos.
+    Consulta todos los dispositivos del CSV y solicita sus datos EN PARALELO.
+    Emite progreso en tiempo real a través de callback_progreso.
     
     Args:
         archivo_csv: Ruta al CSV. Si es None, usa el más reciente.
-        callback_progreso: Función callback(ip, total, current) para reportar progreso
+        callback_progreso: Función callback(datos) donde datos={'ip', 'mac', 'activo', 'serial', 'index', 'total'}
     
     Returns:
         Tupla (activos, total)
     """
+    import asyncio
+    
     ips_macs = cargar_ips_desde_csv(archivo_csv)
     total = len(ips_macs)
-    activos = 0
     
-    print(f"\n=== Consultando {total} dispositivos ===")
+    print(f"\n=== Consultando {total} dispositivos en paralelo ===")
     
-    for i, (ip, mac) in enumerate(ips_macs, 1):
-        if callback_progreso:
-            callback_progreso(ip, total, i)
-        
-        print(f"[{i}/{total}] Consultando {ip} ({mac})...")
-        
-        if solicitar_datos_a_cliente(ip):
-            activos += 1
-            # Actualizar estado en DB si existe el dispositivo
+    # Crear un diccionario para mapear IP -> índice en la tabla
+    ip_to_row = {}
+    
+    async def ping_y_actualizar_dispositivo(ip, mac, index):
+        """Hace ping y actualiza estado en DB"""
+        try:
+            # Ping asíncrono con timeout de 1 segundo
+            proc = await asyncio.create_subprocess_exec(
+                "ping", "-n", "1", "-w", "1000", ip,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            returncode = await proc.wait()
+            activo = (returncode == 0)
+            
+            serial = None
+            
+            # Actualizar estado en DB
             try:
-                # Crear conexión thread-safe para este hilo
                 thread_conn = sql.get_thread_safe_connection()
                 thread_cursor = thread_conn.cursor()
                 
-                # Buscar dispositivo por MAC
-                sql_query, params = sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
+                # Buscar dispositivo por MAC o IP
+                if mac:
+                    sql_query, params = sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
+                else:
+                    sql_query = "SELECT * FROM Dispositivos WHERE ip = ?"
+                    params = (ip,)
+                
                 thread_cursor.execute(sql_query, params)
                 dispositivo = thread_cursor.fetchone()
                 
                 if dispositivo:
                     serial = dispositivo[0]
-                    # Insertar estado activo
+                    # Eliminar estado anterior si existe, luego insertar el nuevo
+                    thread_cursor.execute(
+                        "DELETE FROM activo WHERE Dispositivos_serial = ?",
+                        (serial,)
+                    )
                     thread_cursor.execute(
                         "INSERT INTO activo (Dispositivos_serial, powerOn, date) VALUES (?, ?, ?)",
-                        (serial, True, datetime.now().isoformat())
+                        (serial, activo, datetime.now().isoformat())
                     )
                     thread_conn.commit()
                 
                 thread_conn.close()
             except Exception as e:
-                print(f"    Error actualizando estado: {e}")
-        else:
-            # Marcar como inactivo si existe
-            try:
-                # Crear conexión thread-safe para este hilo
-                thread_conn = sql.get_thread_safe_connection()
-                thread_cursor = thread_conn.cursor()
-                
-                sql_query, params = sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
-                thread_cursor.execute(sql_query, params)
-                dispositivo = thread_cursor.fetchone()
-                
-                if dispositivo:
-                    serial = dispositivo[0]
-                    # Insertar estado inactivo
-                    thread_cursor.execute(
-                        "INSERT INTO activo (Dispositivos_serial, powerOn, date) VALUES (?, ?, ?)",
-                        (serial, False, datetime.now().isoformat())
-                    )
-                    thread_conn.commit()
-                
-                thread_conn.close()
-            except:
-                pass
+                pass  # Silenciar errores de DB para no saturar el log
+            
+            # Emitir progreso en tiempo real
+            if callback_progreso:
+                callback_progreso({
+                    'ip': ip,
+                    'mac': mac,
+                    'activo': activo,
+                    'serial': serial,
+                    'index': index,
+                    'total': total
+                })
+            
+            status = "ACTIVO" if activo else "Desconectado"
+            print(f"  [{index}/{total}] {ip}: {status}")
+            
+            return activo
+            
+        except Exception as e:
+            # Emitir error también
+            if callback_progreso:
+                callback_progreso({
+                    'ip': ip,
+                    'mac': mac,
+                    'activo': False,
+                    'serial': None,
+                    'index': index,
+                    'total': total,
+                    'error': str(e)
+                })
+            return False
+    
+    async def consultar_todos():
+        # Crear tareas para todos los dispositivos
+        tareas = []
+        for idx, (ip, mac) in enumerate(ips_macs, 1):
+            tareas.append(ping_y_actualizar_dispositivo(ip, mac, idx))
+        
+        # Ejecutar en lotes de 50 para no saturar la red
+        resultados = []
+        batch_size = 50
+        for i in range(0, len(tareas), batch_size):
+            batch = tareas[i:i+batch_size]
+            batch_num = i//batch_size + 1
+            total_batches = (len(tareas)-1)//batch_size + 1
+            print(f"\n>> Procesando lote {batch_num}/{total_batches} ({len(batch)} dispositivos)...")
+            batch_results = await asyncio.gather(*batch, return_exceptions=True)
+            resultados.extend(batch_results)
+        
+        return resultados
+    
+    # Ejecutar consulta asíncrona
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        resultados = loop.run_until_complete(consultar_todos())
+        activos = sum(1 for r in resultados if r is True)
+    finally:
+        loop.close()
     
     print(f"\n=== Consulta finalizada: {activos}/{total} dispositivos activos ===\n")
     return activos, total

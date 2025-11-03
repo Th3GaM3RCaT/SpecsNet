@@ -1,13 +1,12 @@
-from PySide6 import QtWidgets, QtCore, QtGui
-from PySide6.QtCore import Qt
+from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QColor, QBrush
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMainWindow
 import sys
 import asyncio
 from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
-from sql_specs.consultas_sql import cursor, abrir_consulta, connection  # Funciones de DB
+from sql_specs.consultas_sql import cursor, abrir_consulta  # Funciones de DB
 import logica_servidor as ls  # Importar lógica del servidor
-from logica_Hilo import Hilo  # Para operaciones en background
+from logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
 
 class InventarioWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -19,6 +18,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.hilo_servidor = None
         self.hilo_escaneo = None
         self.hilo_consulta = None
+        
+        # Mapa de IP a fila de tabla para actualización en tiempo real
+        self.ip_to_row = {}
         
         # Agregar emojis a los botones después de cargar la UI
         #self.agregar_iconos_texto()
@@ -89,13 +91,13 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Ajustar ancho de columnas
         self.ui.tableDispositivos.setColumnWidth(0, 80)   # Estado
         self.ui.tableDispositivos.setColumnWidth(1, 60)   # DTI
-        self.ui.tableDispositivos.setColumnWidth(2, 150)  # Serial
+        self.ui.tableDispositivos.setColumnWidth(2, 90)  # Serial
         self.ui.tableDispositivos.setColumnWidth(3, 120)  # Usuario
         self.ui.tableDispositivos.setColumnWidth(4, 180)  # Modelo
         self.ui.tableDispositivos.setColumnWidth(5, 200)  # Procesador
         self.ui.tableDispositivos.setColumnWidth(6, 80)   # RAM
         self.ui.tableDispositivos.setColumnWidth(7, 150)  # GPU
-        self.ui.tableDispositivos.setColumnWidth(8, 80)   # Licencia
+        self.ui.tableDispositivos.setColumnWidth(8, 85)   # Licencia
         # IP se estira automáticamente
     
     def cargar_dispositivos(self):
@@ -113,6 +115,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 self.ui.statusbar.showMessage(">> No hay dispositivos en la DB", 3000)
                 return
             
+            # Limpiar mapa ip_to_row
+            self.ip_to_row.clear()
+            
             # Llenar tabla primero con estado "Verificando..."
             for dispositivo in dispositivos:
                 row_position = self.ui.tableDispositivos.rowCount()
@@ -121,8 +126,12 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 # Desempaquetar datos
                 serial, dti, user, mac, model, processor, gpu, ram, disk, license_status, ip, activo = dispositivo
                 
+                # Guardar mapeo ip -> row
+                if ip:
+                    self.ip_to_row[ip] = row_position
+                
                 # Columna Estado (inicialmente "Verificando...")
-                estado_item = QtWidgets.QTableWidgetItem("[...] Verificando")
+                estado_item = QtWidgets.QTableWidgetItem("[...]")
                 estado_item.setBackground(QBrush(QColor(255, 255, 200)))
                 self.ui.tableDispositivos.setItem(row_position, 0, estado_item)
                 
@@ -210,10 +219,10 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                             estado_item.setText("[?] Sin IP")
                             estado_item.setBackground(QBrush(QColor(200, 200, 200)))
                         elif conectado:
-                            estado_item.setText("[ON] Conectado")
+                            estado_item.setText("Encendido")
                             estado_item.setBackground(QBrush(QColor(150, 255, 150)))
                         else:
-                            estado_item.setText("[OFF] Desconectado")
+                            estado_item.setText("Apagado")
                             estado_item.setBackground(QBrush(QColor(255, 200, 200)))
             
             print(f">> Verificación de estados completada")
@@ -222,6 +231,34 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.hilo_verificacion.terminado.connect(callback_estados)
         self.hilo_verificacion.start()
         print(">> Verificando estado de conexión de dispositivos...")
+    
+    def on_consulta_progreso(self, datos):
+        """Callback para actualizar estado en tiempo real durante consulta de dispositivos"""
+        try:
+            ip = datos.get('ip')
+            activo = datos.get('activo')
+            index = datos.get('index')
+            total = datos.get('total')
+            
+            # Actualizar tabla si tenemos el mapeo
+            if ip and ip in self.ip_to_row:
+                row = self.ip_to_row[ip]
+                estado_item = self.ui.tableDispositivos.item(row, 0)
+                
+                if estado_item:
+                    if activo:
+                        estado_item.setText("Encendido")
+                        estado_item.setBackground(QBrush(QColor(150, 255, 150)))
+                    else:
+                        estado_item.setText("Apagado")
+                        estado_item.setBackground(QBrush(QColor(255, 200, 200)))
+            
+            # Mostrar progreso en consola
+            if index is not None and total is not None:
+                print(f">> Consultando dispositivo {index}/{total}: {ip} - {'Encendido' if activo else 'Apagado'}")
+        
+        except Exception as e:
+            print(f"Error en on_consulta_progreso: {e}")
     
     def on_dispositivo_seleccionado(self):
         """Cuando se selecciona un dispositivo en la tabla"""
@@ -580,8 +617,8 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.btnActualizar.setEnabled(True)
     
     def anunciar_y_esperar_clientes(self):
-        """Paso 3: Anuncia servidor y consulta cada cliente"""
-        def callback_anuncio():
+        """Paso 3: Anuncia servidor y consulta cada cliente con actualizaciones en tiempo real"""
+        def callback_anuncio(callback_progreso=None):
             try:
                 print("\n=== Anunciando servidor y consultando clientes ===")
                 # Anunciar presencia
@@ -592,9 +629,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 import time
                 time.sleep(2)
                 
-                # Consultar dispositivos desde CSV
+                # Consultar dispositivos desde CSV con callback de progreso
                 print(">> Consultando dispositivos...")
-                activos, total = ls.consultar_dispositivos_desde_csv()
+                activos, total = ls.consultar_dispositivos_desde_csv(callback_progreso=callback_progreso)
                 
                 print(f">> Consulta completada: {activos}/{total} dispositivos respondieron")
                 return (activos, total)
@@ -605,7 +642,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 traceback.print_exc()
                 return (0, 0)
         
-        self.hilo_consulta = Hilo(callback_anuncio)
+        # Usar HiloConProgreso para recibir actualizaciones en tiempo real
+        self.hilo_consulta = HiloConProgreso(callback_anuncio)
+        self.hilo_consulta.progreso.connect(self.on_consulta_progreso)
         self.hilo_consulta.terminado.connect(self.on_consulta_terminada)
         self.hilo_consulta.error.connect(self.on_consulta_error)
         self.hilo_consulta.start()

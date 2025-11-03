@@ -134,8 +134,14 @@ QStatusBar {
     </property>
     <item>
      <widget class="QFrame" name="frameHeader">
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>66</height>
+       </size>
+      </property>
       <property name="frameShape">
-       <enum>QFrame::NoFrame</enum>
+       <enum>QFrame::Shape::NoFrame</enum>
       </property>
       <layout class="QHBoxLayout" name="horizontalLayout_header">
        <property name="spacing">
@@ -146,7 +152,6 @@ QStatusBar {
          <property name="font">
           <font>
            <pointsize>16</pointsize>
-           <weight>75</weight>
            <bold>true</bold>
           </font>
          </property>
@@ -158,7 +163,7 @@ QStatusBar {
        <item>
         <spacer name="horizontalSpacer">
          <property name="orientation">
-          <enum>Qt::Horizontal</enum>
+          <enum>Qt::Orientation::Horizontal</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -247,8 +252,14 @@ QStatusBar {
     </item>
     <item>
      <widget class="QSplitter" name="splitterPrincipal">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>0</height>
+       </size>
+      </property>
       <property name="orientation">
-       <enum>Qt::Horizontal</enum>
+       <enum>Qt::Orientation::Horizontal</enum>
       </property>
       <property name="handleWidth">
        <number>10</number>
@@ -285,18 +296,18 @@ QStatusBar {
         <item>
          <widget class="QTableWidget" name="tableDispositivos">
           <property name="editTriggers">
-           <set>QAbstractItemView::NoEditTriggers</set>
-          </property>
-          <property name="selectionMode">
-           <enum>QAbstractItemView::SingleSelection</enum>
-          </property>
-          <property name="selectionBehavior">
-           <enum>QAbstractItemView::SelectRows</enum>
-          </property>
-          <property name="sortingEnabled">
-           <bool>true</bool>
+           <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
           </property>
           <property name="alternatingRowColors">
+           <bool>true</bool>
+          </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::SelectionMode::SingleSelection</enum>
+          </property>
+          <property name="selectionBehavior">
+           <enum>QAbstractItemView::SelectionBehavior::SelectRows</enum>
+          </property>
+          <property name="sortingEnabled">
            <bool>true</bool>
           </property>
           <property name="columnCount">
@@ -406,7 +417,6 @@ QStatusBar {
               <widget class="QLabel" name="labelInfoSerial">
                <property name="font">
                 <font>
-                 <weight>75</weight>
                  <bold>true</bold>
                 </font>
                </property>
@@ -429,7 +439,6 @@ QStatusBar {
               <widget class="QLabel" name="labelInfoDTI">
                <property name="font">
                 <font>
-                 <weight>75</weight>
                  <bold>true</bold>
                 </font>
                </property>
@@ -449,7 +458,6 @@ QStatusBar {
               <widget class="QLabel" name="labelInfoMAC">
                <property name="font">
                 <font>
-                 <weight>75</weight>
                  <bold>true</bold>
                 </font>
                </property>
@@ -472,7 +480,6 @@ QStatusBar {
               <widget class="QLabel" name="labelInfoDisco">
                <property name="font">
                 <font>
-                 <weight>75</weight>
                  <bold>true</bold>
                 </font>
                </property>
@@ -584,7 +591,7 @@ QStatusBar {
         <item>
          <spacer name="verticalSpacer">
           <property name="orientation">
-           <enum>Qt::Vertical</enum>
+           <enum>Qt::Orientation::Vertical</enum>
           </property>
           <property name="sizeHint" stdset="0">
            <size>
@@ -613,7 +620,7 @@ QStatusBar {
      <x>0</x>
      <y>0</y>
      <width>1280</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuArchivo">
