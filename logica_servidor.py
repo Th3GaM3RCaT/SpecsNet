@@ -357,7 +357,7 @@ def cargar_ips_desde_csv(archivo_csv=None):
     """
     if archivo_csv is None:
         # Buscar el CSV más reciente
-        csvs = glob("optimized_scan_*.csv")
+        csvs = glob("discovered_devices.csv")
         if not csvs:
             print("No se encontraron archivos CSV de escaneo")
             return []
@@ -365,6 +365,7 @@ def cargar_ips_desde_csv(archivo_csv=None):
         print(f"Usando archivo CSV: {archivo_csv}")
     
     ips_macs = []
+    invalidas = 0
     try:
         with open(archivo_csv, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -372,14 +373,27 @@ def cargar_ips_desde_csv(archivo_csv=None):
                 ip = row.get('ip', '').strip()
                 mac = row.get('mac', '').strip()
                 
-                # Validar IP
-                if ip and mac and '.' in ip:
+                # Validar IP completa
+                if ip:
                     # Filtrar IPs incompletas o inválidas
                     partes = ip.split('.')
-                    if len(partes) == 4 and all(p.isdigit() for p in partes):
+                    if len(partes) != 4:
+                        print(f"  ⚠ IP descartada (octetos incorrectos): {ip}")
+                        invalidas += 1
+                        continue
+                    
+                    # Verificar que sean números y rango válido
+                    if all(p.isdigit() and 0 <= int(p) <= 255 for p in partes):
+                        #if ':' in mac:  # Validar MAC también
                         ips_macs.append((ip, mac))
+                        
+                    else:
+                        print(f"  ⚠ IP descartada (formato inválido): {ip}")
+                        invalidas += 1
         
-        print(f"Cargadas {len(ips_macs)} IPs desde {archivo_csv}")
+        print(f"✓ Cargadas {len(ips_macs)} IPs válidas desde {archivo_csv}")
+        if invalidas > 0:
+            print(f"  ⚠ Se descartaron {invalidas} entradas inválidas del CSV")
         return ips_macs
     except Exception as e:
         print(f"Error leyendo CSV: {e}")
@@ -451,28 +465,48 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
             activos += 1
             # Actualizar estado en DB si existe el dispositivo
             try:
+                # Crear conexión thread-safe para este hilo
+                thread_conn = sql.get_thread_safe_connection()
+                thread_cursor = thread_conn.cursor()
+                
                 # Buscar dispositivo por MAC
                 sql_query, params = sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
-                sql.cursor.execute(sql_query, params)
-                dispositivo = sql.cursor.fetchone()
+                thread_cursor.execute(sql_query, params)
+                dispositivo = thread_cursor.fetchone()
                 
                 if dispositivo:
                     serial = dispositivo[0]
-                    sql.setActive((serial, True, datetime.now().isoformat()))
-                    sql.connection.commit()
+                    # Insertar estado activo
+                    thread_cursor.execute(
+                        "INSERT INTO activo (Dispositivos_serial, powerOn, date) VALUES (?, ?, ?)",
+                        (serial, True, datetime.now().isoformat())
+                    )
+                    thread_conn.commit()
+                
+                thread_conn.close()
             except Exception as e:
                 print(f"    Error actualizando estado: {e}")
         else:
             # Marcar como inactivo si existe
             try:
+                # Crear conexión thread-safe para este hilo
+                thread_conn = sql.get_thread_safe_connection()
+                thread_cursor = thread_conn.cursor()
+                
                 sql_query, params = sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
-                sql.cursor.execute(sql_query, params)
-                dispositivo = sql.cursor.fetchone()
+                thread_cursor.execute(sql_query, params)
+                dispositivo = thread_cursor.fetchone()
                 
                 if dispositivo:
                     serial = dispositivo[0]
-                    sql.setActive((serial, False, datetime.now().isoformat()))
-                    sql.connection.commit()
+                    # Insertar estado inactivo
+                    thread_cursor.execute(
+                        "INSERT INTO activo (Dispositivos_serial, powerOn, date) VALUES (?, ?, ?)",
+                        (serial, False, datetime.now().isoformat())
+                    )
+                    thread_conn.commit()
+                
+                thread_conn.close()
             except:
                 pass
     
@@ -598,7 +632,7 @@ def monitorear_dispositivos_periodicamente(intervalo_minutos=15, callback_progre
             print(f"Error en monitoreo: {e}")
             import traceback
             traceback.print_exc()
-            time.sleep(60)  # Esperar 1 minuto antes de reintentar
+            time.sleep(10) 
 
 
 # compilar usando:

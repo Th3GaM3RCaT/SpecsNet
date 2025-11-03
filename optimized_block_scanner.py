@@ -5,14 +5,10 @@ optimized_block_scanner.py
 Escaneo optimizado por bloques dentro de segmentos 10.100.0.0/16 .. 10.119.0.0/16.
 Usa probes broadcast/multicast (SSDP/mDNS) por bloque y fallback a ping-sweep chunked
 si no hay respuestas. Luego asocia MACs leyendo la tabla ARP.
-
-Ejemplo:
-  python3 optimized_block_scanner.py --start 100 --end 119 --use-broadcast-probe
-
 """
+import time
 
 
-import argparse
 import asyncio
 import ipaddress
 import socket
@@ -21,19 +17,20 @@ import re
 import csv
 import sys
 import select
-import time
-from datetime import datetime
+import os
 from itertools import islice
 
-# ------------------ DEFAULTS ------------------
-DEFAULT_START = 100
-DEFAULT_END = 119
-DEFAULT_CHUNK = 255
-DEFAULT_PER_HOST_TIMEOUT = 0.8
-DEFAULT_PER_SUBNET_TIMEOUT = 8.0
-DEFAULT_CONCURRENCY = 300
-DEFAULT_PROBE_TIMEOUT = 0.9
-CSV_PREFIX = "optimized_scan"
+# ------------------ CONFIGURACIÓN OPTIMIZADA ------------------
+START_SEGMENT = 100
+END_SEGMENT = 119
+CHUNK_SIZE = 255
+PER_HOST_TIMEOUT = 0.8
+PER_SUBNET_TIMEOUT = 8.0
+CONCURRENCY = 300
+PROBE_TIMEOUT = 0.9
+MAX_PARALLEL_SEGMENTS = 10
+USE_BROADCAST_PROBE = True
+CSV_FILENAME = "discovered_devices.csv"
 
 SSDP_MSEARCH = '\r\n'.join([
     'M-SEARCH * HTTP/1.1',
@@ -45,6 +42,13 @@ SSDP_MSEARCH = '\r\n'.join([
 ]).encode('utf-8')
 
 MDNS_SIMPLE = b"\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+
+# Conteo de dispositivos por segmento, escalado para un objetivo de >300
+SEGMENT_TARGETS = {
+    100: 102, 101: 11, 102: 9, 103: 5, 104: 9, 105: 19, 106: 5, 107: 13,
+    108: 3, 109: 6, 110: 4, 111: 13, 112: 4, 113: 11, 114: 13, 115: 17,
+    116: 22, 117: 3, 118: 16, 119: 17,
+}
 
 # ------------------ NETWORK HELPERS ------------------
 def get_private_supernets():
@@ -259,21 +263,24 @@ def parse_arp_table(): # type: ignore
                 return entries
     except Exception:
         pass
-    # fallback arp -a
+    # fallback arp -a (Windows format: "  10.100.0.39           00-17-c8-cd-15-6e     dinamico")
     try:
         proc2 = subprocess.run(["arp", "-a"], capture_output=True, text=True, check=False)
         out2 = (proc2.stdout or "") + (proc2.stderr or "")
         for line in out2.splitlines():
-            m2 = re.search(r'\((?P<ip>\d{1,3}(?:\.\d{1,3}){3})\)\s+at\s+(?P<mac>[0-9a-fA-F:]{11,17})', line)
+            # Patron para formato Windows: IP seguido de espacios y MAC (con guiones o dos puntos)
+            m2 = re.search(r'(?P<ip>\d{1,3}(?:\.\d{1,3}){3})\s+(?P<mac>[0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2})', line)
             if m2:
-                entries.append((m2.group("ip"), m2.group("mac").lower()))
+                # Normalizar MAC a formato con dos puntos
+                mac = m2.group("mac").replace('-', ':').lower()
+                entries.append((m2.group("ip"), mac))
     except Exception:
         pass
-    # normalize dict
+    # normalize dict (eliminar duplicados, ultima entrada gana)
     d = {}
     for ip, mac in entries:
         if mac:
-            d[ip] = mac.lower()
+            d[ip] = mac
     return list(d.items())
 
 # ------------------ BLOCK PATTERNS ------------------
@@ -281,33 +288,41 @@ def parse_arp_table(): # type: ignore
 # We'll create ipaddress.ip_network objects for each block
 def blocks_for_segment(second_octet):
     """
-    Return list of (ip_network) blocks to scan for given 10.<second>.* segment.
-    Uses patterns inferred from your data.
+    Devuelve bloques de red optimizados para escanear basados en análisis de datos.
+    Estrategia de 3 niveles para balancear velocidad y cobertura.
     """
-    seg_base = f"10.{second_octet}.0.0/16"
-    blocks = []
     s = second_octet
-    if s == 100:
-        # specific blocks found in data
-        blocks += [
-            ipaddress.ip_network("10.100.0.0/25"),    # .0 - .127
-            ipaddress.ip_network("10.100.0.128/25"),  # .128 - .255 (we'll cover to .132 via first block but keep both)
-            ipaddress.ip_network("10.100.2.0/24"),    # big concentrated block 2.x
-            ipaddress.ip_network("10.100.3.0/24"),    # 3.x cluster
-            ipaddress.ip_network("10.100.5.0/24"),    # scattered
-            ipaddress.ip_network("10.100.10.0/24"),   # dense 10.x cluster
+
+    # Nivel 1: Alta Densidad (escaneo agresivo)
+    if s in [100, 105, 115, 116, 118, 119]:
+        blocks = [
+            ipaddress.ip_network(f"10.{s}.0.0/24"),
+            ipaddress.ip_network(f"10.{s}.100.0/24"),
         ]
-    else:
-        # default heuristic blocks for other segments:
-        # - very small low block around .1
-        # - .0/25 to catch .1-.127
-        # - .50/32 and block around .100/30
-        blocks += [
-            ipaddress.ip_network(f"10.{s}.0.0/25"),            # low .1..127
-            ipaddress.ip_network(f"10.{s}.50.0/32") if False else ipaddress.ip_network(f"10.{s}.0.0/32"), # placeholder (we'll probe specific ips too)
-            ipaddress.ip_network(f"10.{s}.100.0/26")           # around .100 (covers .100-.127)
+        if s == 100: # Bloques extra solo para el segmento 100
+            blocks.extend([
+                ipaddress.ip_network("10.100.2.0/24"),
+                ipaddress.ip_network("10.100.3.0/24"),
+                ipaddress.ip_network("10.100.5.0/24"),
+                ipaddress.ip_network("10.100.10.0/24"),
+            ])
+        return list(dict.fromkeys(blocks))
+
+    # Nivel 2: Densidad Media (escaneo estándar)
+    if s in [101, 102, 104, 107, 109, 111, 113, 114]:
+        return [
+            ipaddress.ip_network(f"10.{s}.0.0/25"),    # Primeros 128 hosts
+            ipaddress.ip_network(f"10.{s}.100.0/26"),  # Primeros 64 hosts
         ]
-    return blocks
+
+    # Nivel 3: Baja Densidad (escaneo mínimo)
+    if s in [103, 106, 108, 110, 112, 117]:
+        return [
+            ipaddress.ip_network(f"10.{s}.0.0/27"),    # Primeros 32 hosts
+        ]
+        
+    # Fallback por si se añade un nuevo segmento no clasificado
+    return [ipaddress.ip_network(f"10.{s}.0.0/25")]
 
 # ------------------ SMALL HELPERS ------------------
 def ips_from_range(net):
@@ -321,57 +336,89 @@ def probe_block(segment_net, iface_ip, timeout, use_broadcast):
     return set(mdns)
 
 # ------------------ MAIN FLOW ------------------
-async def scan_blocks(start, end, chunk_size, per_host_timeout, per_subnet_timeout, concurrency, probe_timeout, use_broadcast_probe):
-    local_super = get_local_supernet()
-    all_alive = set()
+async def scan_single_segment(second, chunk_size, per_host_timeout, per_subnet_timeout, concurrency, probe_timeout, use_broadcast_probe):
+    """Escanea un único segmento de red de forma asíncrona."""
+    segment_alive = set()
     loop = asyncio.get_event_loop()
+    
+    print(f"\n--- Segment 10.{second}.x.x ---")
+    blks = blocks_for_segment(second)
+    # dedupe blocks
+    seen = set()
+    final_blocks = []
+    for b in blks:
+        if str(b) in seen:
+            continue
+        seen.add(str(b))
+        final_blocks.append(b)
 
-    for second in range(start, end + 1):
-        print(f"\n--- Segment 10.{second}.x.x ---")
-        blks = blocks_for_segment(second)
-        # dedupe blocks
-        seen = set()
-        final_blocks = []
-        for b in blks:
-            if str(b) in seen:
-                continue
-            seen.add(str(b))
-            final_blocks.append(b)
+    # Also test a few "typical" single IP probes: .1, .50, .100
+    typical_ips = [f"10.{second}.0.1", f"10.{second}.0.50", f"10.{second}.0.100"]
 
-        # Also test a few "typical" single IP probes: .0.1, .0.50, .0.100
-        typical_ips = [f"10.{second}.0.1", f"10.{second}.0.50", f"10.{second}.0.100"]
+    # 1) Probe typical single IPs (fast)
+    for tip in typical_ips:
+        try:
+            ok = await ping_host(tip, per_host_timeout)
+        except Exception:
+            ok = False
+        if ok:
+            print(f"  - quick alive: {tip}")
+            segment_alive.add(tip)
 
-        # 1) Probe typical single IPs (fast)
-        for tip in typical_ips:
-            try:
-                ok = await ping_host(tip, per_host_timeout)
-            except Exception:
-                ok = False
-            if ok:
-                print(f"  - quick alive: {tip}")
-                all_alive.add(tip)
-
-        # 2) For each block: probe by broadcast/multicast first (cheap)
+    # 2) For each block: probe by broadcast/multicast first (cheap) - EN PARALELO
+    target_count = SEGMENT_TARGETS.get(second, 5) # Obtiene el objetivo
+    
+    if use_broadcast_probe and final_blocks:
+        # Ejecutar todos los probes de este segmento en paralelo
+        probe_tasks = []
         for b in final_blocks:
+            probe_tasks.append(loop.run_in_executor(None, probe_block, b, None, probe_timeout, True))
+        
+        # Esperar resultados de todos los probes
+        probe_results = await asyncio.gather(*probe_tasks, return_exceptions=True)
+        
+        # Procesar resultados
+        for idx, (b, result) in enumerate(zip(final_blocks, probe_results)):
             print(f"  -> block {b}")
             found_ips = set()
-            if use_broadcast_probe:
-                try:
-                    found_ips = await loop.run_in_executor(None, probe_block, b, None, probe_timeout, True)
-                except Exception:
-                    found_ips = set()
-                if found_ips:
-                    print(f"     probe found {len(found_ips)} hosts (examples: {list(found_ips)[:6]})")
-                    all_alive.update(found_ips)
-                    continue  # skip sweep if probe returned results
-
-            # if no probe hits, do limited chunked sweep on block (not entire /24 unless block is big)
-            # but limit total addresses we will sweep to reasonable counts
+            if isinstance(result, Exception):
+                found_ips = set()
+            elif isinstance(result, set):
+                found_ips = result
+            else:
+                found_ips = set()
+            
+            if found_ips:
+                print(f"     probe found {len(found_ips)} hosts (examples: {list(found_ips)[:6]})")
+                segment_alive.update(found_ips)
+            else:
+                # Si el probe no encontró nada, hacer sweep
+                num_hosts = b.num_addresses - 2
+                if num_hosts <= 0:
+                    continue
+                if num_hosts > 4096:
+                    print(f"     skipping sweep of {b} (too large: {num_hosts} hosts)")
+                    continue
+                print(f"     doing chunked sweep of {b} ({num_hosts} hosts)")
+                alive = await ping_sweep_chunked(b, chunk_size=chunk_size, per_host_timeout=per_host_timeout,
+                                                 per_subnet_timeout=per_subnet_timeout, concurrency=concurrency)
+                if alive:
+                    print(f"     => {len(alive)} alive in block (examples: {alive[:6]})")
+                    segment_alive.update(alive)
+                else:
+                    print("     => 0 alive in block")
+            
+            # Check si alcanzamos el objetivo
+            if len(segment_alive) >= target_count * 0.9:
+                print(f"     > Objetivo del segmento {second} alcanzado ({len(segment_alive)}/{target_count}). Saltando bloques restantes.")
+                break
+    else:
+        # Sin broadcast probe, hacer sweep directo en cada bloque
+        for b in final_blocks:
+            print(f"  -> block {b}")
             num_hosts = b.num_addresses - 2
             if num_hosts <= 0:
                 continue
-            # build a temporary network for sweep: use the block as-is
-            # but skip if block too large
             if num_hosts > 4096:
                 print(f"     skipping sweep of {b} (too large: {num_hosts} hosts)")
                 continue
@@ -380,39 +427,224 @@ async def scan_blocks(start, end, chunk_size, per_host_timeout, per_subnet_timeo
                                              per_subnet_timeout=per_subnet_timeout, concurrency=concurrency)
             if alive:
                 print(f"     => {len(alive)} alive in block (examples: {alive[:6]})")
-                all_alive.update(alive)
+                segment_alive.update(alive)
             else:
                 print("     => 0 alive in block")
+            
+            if len(segment_alive) >= target_count * 0.9:
+                print(f"     > Objetivo del segmento {second} alcanzado ({len(segment_alive)}/{target_count}). Saltando al siguiente.")
+                break
 
+    return segment_alive
+
+
+async def scan_blocks(start, end, chunk_size, per_host_timeout, per_subnet_timeout, concurrency, probe_timeout, use_broadcast_probe, max_parallel_segments):
+    """Escanea múltiples segmentos en paralelo con control de concurrencia."""
+    local_super = get_local_supernet()
+    
+    all_segments = list(range(start, end + 1))
+    all_alive = set()
+    
+    # Procesar segmentos en lotes paralelos
+    print(f"\nEscaneando {len(all_segments)} segmentos en lotes de {max_parallel_segments}...")
+    
+    for i in range(0, len(all_segments), max_parallel_segments):
+        batch = all_segments[i:i + max_parallel_segments]
+        print(f"\nProcesando lote: segmentos {batch[0]}-{batch[-1]}")
+        
+        tasks = []
+        for second in batch:
+            task = scan_single_segment(second, chunk_size, per_host_timeout, per_subnet_timeout, 
+                                       concurrency, probe_timeout, use_broadcast_probe)
+            tasks.append(task)
+        
+        # Ejecutar el lote actual en paralelo
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Combinar resultados del lote
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                print(f"ERROR: Error en segmento 10.{batch[idx]}.x.x: {result}")
+            elif isinstance(result, set):
+                all_alive.update(result)
+        
+        print(f"Lote completado. Total acumulado: {len(all_alive)} IPs activas")
+    
     return sorted(all_alive, key=lambda s: tuple(int(x) for x in s.split(".")))
 
+async def force_arp_population(ips):
+    """Envía pings rápidos a todas las IPs para forzar entrada en tabla ARP."""
+    async def ping_single(ip):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ping", "-n", "1", "-w", "500", ip,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.wait()
+        except Exception:
+            pass
+    
+    # Hacer ping en lotes para no saturar
+    batch_size = 50
+    for i in range(0, len(ips), batch_size):
+        batch = ips[i:i+batch_size]
+        await asyncio.gather(*[ping_single(ip) for ip in batch], return_exceptions=True)
+    
+    # Esperar un poco para que Windows actualice la tabla ARP
+    await asyncio.sleep(0.5)
+
+def is_computer_mac(mac):
+    """Determina si una MAC pertenece a un dispositivo tipo computadora."""
+    if not mac:
+        return False
+    
+    # Extraer OUI (primeros 3 octetos)
+    oui = mac[:8].upper()  # Formato: XX:XX:XX
+    
+    # OUIs de fabricantes de COMPUTADORAS (PCs, laptops, tablets)
+    computer_vendors = {
+        # Dell
+        '00:14:22', '00:1E:C9', '18:03:73', '74:86:7A', 'D4:AE:52', 
+        'B8:CA:3A', 'D4:BE:D9', '98:90:96', '10:98:36', '84:7B:EB',
+        # HP/Compaq
+        '00:17:C8', '00:17:A4', '00:1F:29', '00:21:5A', '00:23:7D',
+        '00:25:B3', '3C:D9:2B', '70:5A:B6', 'A0:48:1C', '00:26:55',
+        # Lenovo/IBM
+        '00:1A:6B', '54:42:49', 'B0:5A:DA', 'C8:1F:66', '00:23:54',
+        'F0:DE:F1', '50:65:F3', '00:21:CC', '34:02:86',
+        # Acer
+        '00:03:0D', '00:24:21', 'E0:B9:A5', '00:26:B6', '60:EB:69',
+        # Asus
+        '00:1E:8C', '00:22:15', '04:D4:C4', '08:60:6E', '10:C3:7B',
+        # Toshiba
+        '00:00:39', '00:60:67', '00:A0:B0', '00:C0:D0', '28:E3:47',
+        # Apple (Mac)
+        '00:03:93', '00:0A:95', '00:17:F2', '00:1C:B3', '00:23:12',
+        '00:25:00', '28:CF:E9', '3C:07:54', '68:5B:35', 'A8:20:66',
+        # Samsung
+        '00:12:47', '00:13:77', '00:15:B9', '00:1E:7D', '00:23:39',
+        # MSI
+        '00:23:54', '00:27:0E', '00:30:67', 'E0:94:67',
+        # Microsoft Surface
+        '00:15:5D', '00:50:F2', '28:18:78', 'A0:A4:C5',
+        # Gigabyte
+        '00:24:1D', 'E0:3F:49',
+        # Intel (NUCs, laptops)
+        '00:15:00', '00:1B:21', '5C:51:4F', '94:C6:91',
+        # Realtek (NICs comunes en PCs)
+        '00:E0:4C', '52:54:00', 'E0:D5:5E',
+        # Broadcom (NICs comunes en laptops)
+        '00:10:18', '00:90:4B',
+        # TP-Link (algunos adaptadores USB WiFi, no routers)
+        '50:C7:BF', 'A0:F3:C1', 'C4:6E:1F',
+    }
+    
+    # OUIs de ROUTERS, SWITCHES y EQUIPOS DE RED (a descartar)
+    network_equipment = {
+        # Cisco
+        '00:00:0C', '00:01:42', '00:01:63', '00:01:64', '00:01:96',
+        '00:01:97', '00:02:17', '00:02:3D', '00:02:4A', '00:02:4B',
+        '00:02:7D', '00:02:7E', '00:02:B9', '00:02:BA', '00:02:FC',
+        # Ubiquiti (APs, routers)
+        '00:15:6D', '00:27:22', '04:18:D6', '24:A4:3C', '68:D7:9A',
+        '70:A7:41', '74:83:C2', '80:2A:A8', 'B4:FB:E4', 'DC:9F:DB',
+        # MikroTik
+        '00:0C:42', '4C:5E:0C', '6C:3B:6B', '74:4D:28', 'D4:CA:6D',
+        # Huawei (routers)
+        '00:46:4B', '00:66:4B', '00:E0:FC', '04:C0:6F', '70:72:3C',
+        # ZTE (routers)
+        '00:19:CB', '24:1F:A0', '48:3B:38', '6C:59:40', 'F8:E7:1E',
+        # D-Link (switches, routers)
+        '00:01:C0', '00:05:5D', '00:0D:88', '00:11:95', '00:13:46',
+        # Netgear (routers)
+        '00:09:5B', '00:14:6C', '00:1B:2F', '00:1E:2A', '00:26:F2',
+        # Linksys
+        '00:06:25', '00:0C:41', '00:0E:08', '00:12:17', '00:13:10',
+        # Aruba Networks (APs)
+        '00:0B:86', '00:1A:1E', '20:4C:03', '24:DE:C6', '70:3A:0E',
+        # Juniper Networks
+        '00:05:85', '00:12:1E', '00:19:E2', '00:1F:12', '00:21:59',
+        # HPE/Aruba switches
+        'E0:50:8B', 'A0:B3:CC', '94:B4:0F',
+        # Fortinet (firewalls)
+        '00:09:0F', '08:5B:0E', '70:4C:A5', '90:6C:AC',
+        # Sophos (firewalls)
+        '00:1A:8C', '7C:5A:1C', '00:30:BD',
+        # SonicWall (firewalls)
+        '00:06:B1', '00:17:C5', '00:1D:6A', 'C0:EA:E4',
+    }
+    
+    # Primero verificar si es equipo de red (excluir)
+    if oui in network_equipment:
+        return False
+    
+    # Verificar si es computadora conocida
+    if oui in computer_vendors:
+        return True
+    
+    # Si no está en ninguna lista, aplicar heurística:
+    # - Routers típicamente tienen MACs en rangos reservados o multicast
+    # - MACs que terminan en patrones específicos de red
+    
+    # Descartar MACs multicast o broadcast
+    first_octet = int(mac[:2], 16)
+    if first_octet & 0x01:  # Bit multicast activado
+        return False
+    
+    # Por defecto, si no sabemos, asumimos que SÍ es computadora
+    # (esto incluirá PCs genéricas/clones con NICs no identificados)
+    return True
+
 def merge_with_arp(alive_ips):
+    """Hace ping a todas las IPs y luego extrae MACs de la tabla ARP, filtrando solo dispositivos de red conocidos."""
+    print(f"\n>> Poblando tabla ARP para {len(alive_ips)} IPs...")
+    
+    # Forzar población de tabla ARP
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(force_arp_population(alive_ips))
+        loop.close()
+    except Exception as e:
+        print(f"  [!] Error poblando ARP: {e}")
+    
+    # Ahora sí parsear la tabla ARP
     arp = parse_arp_table()
     arp_map = dict(arp)
     out = []
+    macs_found = 0
+    filtered_out = 0
+    sin_mac = 0
+    
     for ip in sorted(alive_ips, key=lambda s: tuple(int(x) for x in s.split("."))):
         mac = arp_map.get(ip)
-        out.append((ip, mac))
+        
+        if mac:
+            macs_found += 1
+            # Si tiene MAC, verificar que NO sea un dispositivo de red
+            if is_computer_mac(mac):
+                # Es computadora o desconocido (incluir)
+                out.append((ip, mac))
+            else:
+                # Es switch/router/AP conocido (descartar)
+                filtered_out += 1
+                print(f"  [X] Filtrado {ip} ({mac[:8]}...) - Equipo de red conocido")
+        else:
+            # No tiene MAC en tabla ARP (probablemente en otra subred)
+            # INCLUIR de todas formas - la MAC se obtendrá después del JSON
+            sin_mac += 1
+            out.append((ip, None))
+    
+    print(f">> MACs obtenidas: {macs_found}/{len(alive_ips)}")
+    print(f">> Dispositivos incluidos: {len(out)}")
+    print(f"   - Con MAC de computadora: {len(out) - sin_mac}")
+    print(f"   - Sin MAC (otras subredes): {sin_mac}")
+    print(f"   - Equipos de red descartados: {filtered_out}")
     return out
 
-def parse_args():
-    p = argparse.ArgumentParser(description="Optimized block scanner for 10.100..10.119 ranges.")
-    p.add_argument("--start", type=int, default=DEFAULT_START)
-    p.add_argument("--end", type=int, default=DEFAULT_END)
-    p.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK)
-    p.add_argument("--per-host-timeout", type=float, default=DEFAULT_PER_HOST_TIMEOUT)
-    p.add_argument("--per-subnet-timeout", type=float, default=DEFAULT_PER_SUBNET_TIMEOUT)
-    p.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
-    p.add_argument("--probe-timeout", type=float, default=DEFAULT_PROBE_TIMEOUT)
-    p.add_argument("--use-broadcast-probe", action="store_true", help="use SSDP/mDNS probe before sweeping blocks")
-    p.add_argument("--csv", action="store_true", help="save CSV (default: yes)")
-    return p.parse_args()
-
-def parse_arp_table():
-    # wrapper: reuse parse_arp_table from previous patterns
-    return parse_arp_table_raw_fallback()
-
 def parse_arp_table_raw_fallback():
+    """Parsea la tabla ARP del sistema para obtener IP→MAC."""
     entries = []
     try:
         proc = subprocess.run(["ip", "neigh"], capture_output=True, text=True, check=False)
@@ -443,55 +675,80 @@ def parse_arp_table_raw_fallback():
 
 # ------------------ ENTRYPOINT ------------------
 def main():
-    # Timestamp de inicio
-    start_time = time.time()
-    start_datetime = datetime.now()
-    print(f"🕐 Inicio del escaneo: {start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 60)
-    
-    args = parse_args()
+    """Función principal que ejecuta el escaneo con configuración optimizada."""
     try:
         local_super = get_local_supernet()
     except Exception as e:
         print("ERROR:", e)
         sys.exit(1)
 
-    print(f"Scanning 10.{args.start}.x.x .. 10.{args.end}.x.x  (use-broadcast={args.use_broadcast_probe})")
+    print(f"Escaneando segmentos 10.{START_SEGMENT}.x.x .. 10.{END_SEGMENT}.x.x")
+    print(f"   Broadcast probe: {'SI' if USE_BROADCAST_PROBE else 'NO'} | Segmentos paralelos: {MAX_PARALLEL_SEGMENTS}")
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        alive = loop.run_until_complete(scan_blocks(args.start, args.end,
-                                                    chunk_size=args.chunk_size,
-                                                    per_host_timeout=args.per_host_timeout,
-                                                    per_subnet_timeout=args.per_subnet_timeout,
-                                                    concurrency=args.concurrency,
-                                                    probe_timeout=args.probe_timeout,
-                                                    use_broadcast_probe=args.use_broadcast_probe))
+        alive = loop.run_until_complete(scan_blocks(
+            START_SEGMENT, 
+            END_SEGMENT,
+            chunk_size=CHUNK_SIZE,
+            per_host_timeout=PER_HOST_TIMEOUT,
+            per_subnet_timeout=PER_SUBNET_TIMEOUT,
+            concurrency=CONCURRENCY,
+            probe_timeout=PROBE_TIMEOUT,
+            use_broadcast_probe=USE_BROADCAST_PROBE,
+            max_parallel_segments=MAX_PARALLEL_SEGMENTS
+        ))
     finally:
         loop.close()
 
-    print(f"\nTotal alive IPs found: {len(alive)} (examples: {alive[:20]})")
-    merged = merge_with_arp(alive)
-    csv_name = f"{CSV_PREFIX}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    with open(csv_name, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["ip", "mac"])
-        for ip, mac in merged:
-            w.writerow([ip, mac or ""])
-    print("CSV saved:", csv_name)
+    print(f"\nTotal IPs activas encontradas: {len(alive)}")
+    if alive:
+        print(f"   Ejemplos: {alive[:10]}")
     
-    # Timestamp de finalización
-    end_time = time.time()
-    end_datetime = datetime.now()
-    elapsed_seconds = end_time - start_time
-    
-    print("=" * 60)
-    print(f"🕐 Fin del escaneo: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"⏱️  TIEMPO TOTAL DE EJECUCIÓN: {elapsed_seconds:.2f} segundos ({elapsed_seconds/60:.2f} minutos)")
-    print("=" * 60)
-    
-    # Pausa de 3 segundos para que puedas ver el resultado
-    time.sleep(3)
+    newly_scanned = merge_with_arp(alive)
 
-if __name__ == "__main__":
-    main()
+    # --- Guardar en CSV (PRESERVAR IPs antiguas + agregar nuevas) ---
+    existing_devices = {}
+
+    # 1. Leer dispositivos existentes del CSV (preservar lista histórica)
+    if os.path.exists(CSV_FILENAME):
+        try:
+            with open(CSV_FILENAME, "r", newline="", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if header == ['ip', 'mac']:
+                    for row in reader:
+                        if len(row) == 2:
+                            existing_devices[row[0]] = row[1] if row[1] else None
+        except Exception as e:
+            print(f"Advertencia: No se pudo leer CSV existente: {e}")
+
+    # 2. Actualizar/agregar dispositivos del escaneo actual
+    for ip, mac in newly_scanned:
+        existing_devices[ip] = mac  # Actualizar MAC si la obtuvimos, o None
+
+    # 3. Ordenar por IP (numéricamente)
+    sorted_devices = sorted(existing_devices.items(), 
+                           key=lambda item: tuple(map(int, item[0].split('.'))))
+
+    # 4. Escribir archivo actualizado
+    with open(CSV_FILENAME, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["ip", "mac"])
+        for ip, mac in sorted_devices:
+            writer.writerow([ip, mac or ""])
+    
+    # 5. Estadísticas
+    with_mac = sum(1 for ip, mac in sorted_devices if mac)
+    without_mac = len(sorted_devices) - with_mac
+    nuevas = len([ip for ip in newly_scanned if ip[0] not in existing_devices or not existing_devices.get(ip[0])])
+    
+    print(f"CSV actualizado: '{CSV_FILENAME}'")
+    print(f"   - Total dispositivos: {len(sorted_devices)}")
+    print(f"   - Con MAC: {with_mac}")
+    print(f"   - Sin MAC: {without_mac}")
+    print(f"   - Encontradas en este escaneo: {len(newly_scanned)}")
+    print(f"   - Preservadas de CSV anterior: {len(sorted_devices) - len(newly_scanned)}")
+
+

@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
 import sys
+import asyncio
 from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
 from sql_specs.consultas_sql import cursor, abrir_consulta, connection  # Funciones de DB
 import logica_servidor as ls  # Importar lógica del servidor
@@ -43,11 +44,32 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Deshabilitar botones hasta seleccionar dispositivo
         self.deshabilitar_botones_detalle()
         
-        # Cargar datos iniciales
-        self.cargar_dispositivos()
+        # Cargar datos iniciales y verificar si hay datos
+        self.cargar_datos_iniciales()
         
         # Iniciar servidor en segundo plano
         self.iniciar_servidor()
+    
+    def cargar_datos_iniciales(self):
+        """Carga datos de la DB. Si no hay datos, inicia actualización automática."""
+        try:
+            # Verificar si hay dispositivos en la DB
+            cursor.execute("SELECT COUNT(*) FROM Dispositivos")
+            count = cursor.fetchone()[0]
+            
+            if count > 0:
+                # Hay datos, cargarlos
+                print(f">> Cargando {count} dispositivos de la DB...")
+                self.cargar_dispositivos()
+            else:
+                # No hay datos, iniciar actualización automática
+                print(">> DB vacía - Iniciando actualización automática...")
+                self.ui.statusbar.showMessage(">> DB vacía - Iniciando escaneo automático...", 0)
+                # Esperar 1 segundo y luego iniciar escaneo
+                QtCore.QTimer.singleShot(1000, self.iniciar_escaneo_completo)
+        except Exception as e:
+            print(f"Error verificando DB: {e}")
+            self.ui.statusbar.showMessage(f"ERROR: No se pudo acceder a la DB", 5000)
     
     
     def iniciar_servidor(self):
@@ -57,7 +79,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         
         self.hilo_servidor = Hilo(iniciar_tcp)
         self.hilo_servidor.start()
-        self.ui.statusbar.showMessage("✓ Servidor iniciado - Esperando conexiones de clientes", 3000)
+        self.ui.statusbar.showMessage(">> Servidor iniciado - Esperando conexiones de clientes", 3000)
         print("Servidor TCP iniciado en puerto 5255")
     
     def configurar_tabla(self):
@@ -77,7 +99,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # IP se estira automáticamente
     
     def cargar_dispositivos(self):
-        """Carga los dispositivos desde la base de datos"""
+        """Carga los dispositivos desde la base de datos y verifica estado con ping"""
         # Limpiar tabla
         self.ui.tableDispositivos.setRowCount(0)
         
@@ -87,68 +109,119 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             cursor.execute(sql, params)
             dispositivos = cursor.fetchall()
             
-            # Consultar estados activos más recientes (por fecha)
-            sql_activo = """SELECT a1.Dispositivos_serial, a1.powerOn 
-                           FROM activo a1
-                           INNER JOIN (
-                               SELECT Dispositivos_serial, MAX(date) as max_date
-                               FROM activo
-                               GROUP BY Dispositivos_serial
-                           ) a2 ON a1.Dispositivos_serial = a2.Dispositivos_serial 
-                               AND a1.date = a2.max_date"""
-            cursor.execute(sql_activo)
-            estados = {row[0]: row[1] for row in cursor.fetchall()}
+            if not dispositivos:
+                self.ui.statusbar.showMessage(">> No hay dispositivos en la DB", 3000)
+                return
+            
+            # Llenar tabla primero con estado "Verificando..."
+            for dispositivo in dispositivos:
+                row_position = self.ui.tableDispositivos.rowCount()
+                self.ui.tableDispositivos.insertRow(row_position)
+                
+                # Desempaquetar datos
+                serial, dti, user, mac, model, processor, gpu, ram, disk, license_status, ip, activo = dispositivo
+                
+                # Columna Estado (inicialmente "Verificando...")
+                estado_item = QtWidgets.QTableWidgetItem("[...] Verificando")
+                estado_item.setBackground(QBrush(QColor(255, 255, 200)))
+                self.ui.tableDispositivos.setItem(row_position, 0, estado_item)
+                
+                # Resto de columnas
+                self.ui.tableDispositivos.setItem(row_position, 1, QtWidgets.QTableWidgetItem(str(dti or '-')))
+                self.ui.tableDispositivos.setItem(row_position, 2, QtWidgets.QTableWidgetItem(serial))
+                self.ui.tableDispositivos.setItem(row_position, 3, QtWidgets.QTableWidgetItem(user or '-'))
+                self.ui.tableDispositivos.setItem(row_position, 4, QtWidgets.QTableWidgetItem(model or '-'))
+                self.ui.tableDispositivos.setItem(row_position, 5, QtWidgets.QTableWidgetItem(processor or '-'))
+                self.ui.tableDispositivos.setItem(row_position, 6, QtWidgets.QTableWidgetItem(str(ram or '-')))
+                self.ui.tableDispositivos.setItem(row_position, 7, QtWidgets.QTableWidgetItem(gpu or '-'))
+                
+                # Licencia con color
+                lic_item = QtWidgets.QTableWidgetItem("[OK] Activa" if license_status else "[X] Inactiva")
+                if not license_status:
+                    lic_item.setForeground(QBrush(QColor(200, 0, 0)))
+                self.ui.tableDispositivos.setItem(row_position, 8, lic_item)
+                
+                self.ui.tableDispositivos.setItem(row_position, 9, QtWidgets.QTableWidgetItem(ip or '-'))
+            
+            # Actualizar contador
+            self.ui.labelContador.setText(f"Mostrando {len(dispositivos)} dispositivos")
+            
+            # Verificar estado de conexión en background
+            self.verificar_estados_conexion(dispositivos)
             
         except Exception as e:
             print(f"Error consultando base de datos: {e}")
             import traceback
             traceback.print_exc()
-            self.ui.statusbar.showMessage(f"❌ Error cargando datos: {e}", 5000)
-            # Usar datos de prueba si falla la DB
-            dispositivos = []
-            estados = {}
+            self.ui.statusbar.showMessage(f"ERROR: Error cargando datos: {e}", 5000)
+    
+    def verificar_estados_conexion(self, dispositivos):
+        """Verifica el estado de conexión (ping) de todos los dispositivos en background"""
         
-        # Llenar tabla
-        for dispositivo in dispositivos:
-            row_position = self.ui.tableDispositivos.rowCount()
-            self.ui.tableDispositivos.insertRow(row_position)
+        def verificar_estados():
+            async def ping_dispositivo(ip, row):
+                """Hace ping a un dispositivo y actualiza la UI"""
+                try:
+                    if not ip or ip == '-':
+                        return (row, False, "sin_ip")
+                    
+                    # Ping con timeout de 1 segundo
+                    proc = await asyncio.create_subprocess_exec(
+                        "ping", "-n", "1", "-w", "1000", ip,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL
+                    )
+                    returncode = await proc.wait()
+                    conectado = (returncode == 0)
+                    return (row, conectado, ip)
+                except Exception as e:
+                    return (row, False, ip)
             
-            # Desempaquetar datos
-            serial, dti, user, mac, model, processor, gpu, ram, disk, license_status, ip, activo = dispositivo
+            async def verificar_todos():
+                # Crear tareas para todos los dispositivos
+                tareas = []
+                for idx, dispositivo in enumerate(dispositivos):
+                    ip = dispositivo[10]  # IP está en posición 10
+                    tareas.append(ping_dispositivo(ip, idx))
+                
+                # Ejecutar todos los pings en paralelo
+                resultados = await asyncio.gather(*tareas, return_exceptions=True)
+                return resultados
             
-            # Columna Estado (con color y emoji)
-            estado_item = QtWidgets.QTableWidgetItem()
-            if not activo:
-                estado_item.setText("❌ Inactivo")
-                estado_item.setBackground(QBrush(QColor(220, 220, 220)))
-            elif estados.get(serial, False):
-                estado_item.setText("🟢 Encendido")
-                estado_item.setBackground(QBrush(QColor(200, 255, 200)))
-            else:
-                estado_item.setText("🔴 Apagado")
-                estado_item.setBackground(QBrush(QColor(255, 220, 220)))
-            self.ui.tableDispositivos.setItem(row_position, 0, estado_item)
-            
-            # Resto de columnas
-            self.ui.tableDispositivos.setItem(row_position, 1, QtWidgets.QTableWidgetItem(str(dti or '-')))
-            self.ui.tableDispositivos.setItem(row_position, 2, QtWidgets.QTableWidgetItem(serial))
-            self.ui.tableDispositivos.setItem(row_position, 3, QtWidgets.QTableWidgetItem(user or '-'))
-            self.ui.tableDispositivos.setItem(row_position, 4, QtWidgets.QTableWidgetItem(model or '-'))
-            self.ui.tableDispositivos.setItem(row_position, 5, QtWidgets.QTableWidgetItem(processor or '-'))
-            self.ui.tableDispositivos.setItem(row_position, 6, QtWidgets.QTableWidgetItem(str(ram or '-')))
-            self.ui.tableDispositivos.setItem(row_position, 7, QtWidgets.QTableWidgetItem(gpu or '-'))
-            
-            # Licencia con color
-            lic_item = QtWidgets.QTableWidgetItem("✅ Activa" if license_status else "❌ Inactiva")
-            if not license_status:
-                lic_item.setForeground(QBrush(QColor(200, 0, 0)))
-            self.ui.tableDispositivos.setItem(row_position, 8, lic_item)
-            
-            self.ui.tableDispositivos.setItem(row_position, 9, QtWidgets.QTableWidgetItem(ip or '-'))
+            # Ejecutar verificación asíncrona
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                resultados = loop.run_until_complete(verificar_todos())
+                return resultados
+            finally:
+                loop.close()
         
-        # Actualizar contador
-        self.ui.labelContador.setText(f"Mostrando {len(dispositivos)} dispositivos")
-        self.ui.statusbar.showMessage(f"✓ Datos actualizados - {len(dispositivos)} dispositivos cargados", 3000)
+        # Ejecutar en hilo separado
+        def callback_estados(resultados):
+            # Actualizar UI con resultados (estamos en el thread principal ahora)
+            for resultado in resultados:
+                if isinstance(resultado, tuple):
+                    row, conectado, ip = resultado
+                    estado_item = self.ui.tableDispositivos.item(row, 0)
+                    
+                    if estado_item:  # Verificar que existe
+                        if ip == "sin_ip":
+                            estado_item.setText("[?] Sin IP")
+                            estado_item.setBackground(QBrush(QColor(200, 200, 200)))
+                        elif conectado:
+                            estado_item.setText("[ON] Conectado")
+                            estado_item.setBackground(QBrush(QColor(150, 255, 150)))
+                        else:
+                            estado_item.setText("[OFF] Desconectado")
+                            estado_item.setBackground(QBrush(QColor(255, 200, 200)))
+            
+            print(f">> Verificación de estados completada")
+        
+        self.hilo_verificacion = Hilo(verificar_estados)
+        self.hilo_verificacion.terminado.connect(callback_estados)
+        self.hilo_verificacion.start()
+        print(">> Verificando estado de conexión de dispositivos...")
     
     def on_dispositivo_seleccionado(self):
         """Cuando se selecciona un dispositivo en la tabla"""
@@ -331,7 +404,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         3. Solicitar datos completos a cada cliente
         4. Actualizar tabla
         """
-        self.ui.statusbar.showMessage("🔍 Paso 1/4: Iniciando escaneo de red...", 0)
+        self.ui.statusbar.showMessage("Paso 1/4: Iniciando escaneo de red...", 0)
         self.ui.btnActualizar.setEnabled(False)
         
         # Paso 1: Escanear red
@@ -343,8 +416,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             import subprocess
             try:
                 print("\n=== Ejecutando escaneo de red ===")
+                # Ya no se necesitan argumentos - configuracion esta en el archivo
                 result = subprocess.run(
-                    ['python', 'optimized_block_scanner.py', '--start', '100', '--end', '119', '--use-broadcast-probe'],
+                    ['python', 'optimized_block_scanner.py'],
                     capture_output=True,
                     text=True,
                     creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
@@ -354,13 +428,13 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                     print("Errores:", result.stderr)
                 
                 if result.returncode == 0:
-                    print("✓ Escaneo completado exitosamente")
+                    print(">> Escaneo completado exitosamente")
                     return True
                 else:
-                    print(f"✗ Error en escaneo: código {result.returncode}")
+                    print(f">> Error en escaneo: codigo {result.returncode}")
                     return False
             except Exception as e:
-                print(f"✗ Excepción en escaneo: {e}")
+                print(f">> Excepcion en escaneo: {e}")
                 import traceback
                 traceback.print_exc()
                 return False
@@ -373,16 +447,16 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def on_escaneo_terminado(self, resultado):
         """Callback Paso 1 completado"""
         if resultado:
-            self.ui.statusbar.showMessage("✓ Paso 1/4: Escaneo completado - Poblando DB inicial...", 0)
+            self.ui.statusbar.showMessage(">> Paso 1/4: Escaneo completado - Poblando DB inicial...", 0)
             # Paso 2: Poblar DB con CSV
             self.poblar_db_desde_csv()
         else:
-            self.ui.statusbar.showMessage("❌ Error en escaneo de red", 5000)
+            self.ui.statusbar.showMessage("ERROR: Error en escaneo de red", 5000)
             self.ui.btnActualizar.setEnabled(True)
     
     def on_escaneo_error(self, error):
         """Error en Paso 1"""
-        self.ui.statusbar.showMessage(f"❌ Error en escaneo: {error}", 5000)
+        self.ui.statusbar.showMessage(f"ERROR: Error en escaneo: {error}", 5000)
         self.ui.btnActualizar.setEnabled(True)
     
     def poblar_db_desde_csv(self):
@@ -390,58 +464,101 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         def callback_poblar():
             try:
                 print("\n=== Poblando DB desde CSV ===")
+                # Crear conexión thread-safe para este hilo
+                thread_conn = ls.sql.get_thread_safe_connection()
+                thread_cursor = thread_conn.cursor()
+                
                 # Cargar IPs del CSV
                 ips_macs = ls.cargar_ips_desde_csv()
                 
                 if not ips_macs:
-                    print("⚠ No se encontraron IPs en el CSV")
+                    print("[!] No se encontraron IPs en el CSV")
+                    thread_conn.close()
                     return 0
                 
+                print(f">> CSV cargado: {len(ips_macs)} entradas")
                 insertados = 0
+                actualizados = 0
+                sin_mac = 0
+                
                 for ip, mac in ips_macs:
-                    if not mac:
-                        continue
+                    # Si tiene MAC, usarla como identificador
+                    # Si no tiene MAC, crear serial temporal basado en IP
+                    if mac:
+                        serial_temp = f"TEMP_{mac.replace(':', '')}"
+                        identificador = mac
+                        sql_check, params = ls.sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
+                    else:
+                        # Sin MAC - usar IP como identificador temporal
+                        serial_temp = f"TEMP_IP_{ip.replace('.', '_')}"
+                        identificador = None
+                        sin_mac += 1
+                        # Buscar por IP en lugar de MAC
+                        sql_check = "SELECT serial, MAC FROM Dispositivos WHERE ip = ?"
+                        params = (ip,)
                     
                     # Verificar si ya existe
-                    sql_check, params = ls.sql.abrir_consulta("Dispositivos-select.sql", {"MAC": mac})
-                    ls.sql.cursor.execute(sql_check, params)
-                    existe = ls.sql.cursor.fetchone()
+                    thread_cursor.execute(sql_check, params)
+                    existe = thread_cursor.fetchone()
                     
                     if not existe:
-                        # Insertar dispositivo básico (sin serial, solo con IP/MAC)
+                        # Insertar dispositivo básico
                         # serial, DTI, user, MAC, model, processor, GPU, RAM, disk, license_status, ip, activo
                         datos_basicos = (
-                            f"TEMP_{mac.replace(':', '')}",  # Serial temporal basado en MAC
-                            None,  # DTI
-                            None,  # user
-                            mac,   # MAC
-                            "Pendiente escaneo",  # model
-                            None,  # processor
-                            None,  # GPU
-                            0,     # RAM
-                            None,  # disk
-                            False, # license_status
-                            ip,    # ip
-                            False  # activo (aún no confirmado)
+                            serial_temp,             # Serial temporal
+                            None,                    # DTI
+                            None,                    # user
+                            mac,                     # MAC (puede ser None)
+                            "Pendiente escaneo",     # model
+                            None,                    # processor
+                            None,                    # GPU
+                            0,                       # RAM
+                            None,                    # disk
+                            False,                   # license_status
+                            ip,                      # ip
+                            False                    # activo (aún no confirmado)
                         )
-                        ls.sql.setDevice(datos_basicos)
+                        # Insertar usando la conexión del hilo
+                        thread_cursor.execute(
+                            """INSERT INTO Dispositivos (serial, DTI, user, MAC, model, processor, GPU, RAM, disk, license_status, ip, activo)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            datos_basicos
+                        )
                         insertados += 1
-                        print(f"  + Insertado: {ip} ({mac})")
+                        mac_display = mac if mac else "sin MAC"
+                        print(f"  + Insertado: {ip} ({mac_display})")
                     else:
-                        # Actualizar solo la IP si cambió
+                        # Actualizar IP (y MAC si ahora la tiene)
                         serial_existente = existe[0]
-                        ls.sql.cursor.execute(
-                            "UPDATE Dispositivos SET ip = ? WHERE serial = ?",
-                            (ip, serial_existente)
-                        )
-                        print(f"  ↻ Actualizado IP: {ip} ({mac})")
+                        mac_existente = existe[1]
+                        
+                        if mac and not mac_existente:
+                            # Ahora tiene MAC, actualizarla también
+                            thread_cursor.execute(
+                                "UPDATE Dispositivos SET ip = ?, MAC = ? WHERE serial = ?",
+                                (ip, mac, serial_existente)
+                            )
+                            print(f"  ↻ Actualizado IP+MAC: {ip} ({mac})")
+                        else:
+                            # Solo actualizar IP
+                            thread_cursor.execute(
+                                "UPDATE Dispositivos SET ip = ? WHERE serial = ?",
+                                (ip, serial_existente)
+                            )
+                            print(f"  ↻ Actualizado IP: {ip}")
+                        actualizados += 1
                 
-                ls.sql.connection.commit()
-                print(f"✓ DB poblada: {insertados} nuevos, {len(ips_macs) - insertados} existentes")
+                thread_conn.commit()
+                thread_conn.close()
+                print(f"\n>> Resumen poblado DB:")
+                print(f"   - Insertados: {insertados}")
+                print(f"   - Actualizados: {actualizados}")
+                print(f"   - Sin MAC (pendiente): {sin_mac}")
+                print(f"   - Total en DB: {insertados + actualizados}")
                 return insertados
                 
             except Exception as e:
-                print(f"✗ Error poblando DB: {e}")
+                print(f">> Error poblando DB: {e}")
                 import traceback
                 traceback.print_exc()
                 return 0
@@ -450,16 +567,16 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.hilo_poblado.terminado.connect(self.on_poblado_terminado)
         self.hilo_poblado.error.connect(self.on_poblado_error)
         self.hilo_poblado.start()
-    
+
     def on_poblado_terminado(self, insertados):
         """Callback Paso 2 completado"""
-        self.ui.statusbar.showMessage(f"✓ Paso 2/4: DB poblada ({insertados} nuevos) - Anunciando servidor...", 0)
+        self.ui.statusbar.showMessage(f">> Paso 2/4: DB poblada ({insertados} nuevos) - Anunciando servidor...", 0)
         # Paso 3: Anunciar servidor y esperar conexiones
         self.anunciar_y_esperar_clientes()
     
     def on_poblado_error(self, error):
         """Error en Paso 2"""
-        self.ui.statusbar.showMessage(f"❌ Error poblando DB: {error}", 5000)
+        self.ui.statusbar.showMessage(f"ERROR: Error poblando DB: {error}", 5000)
         self.ui.btnActualizar.setEnabled(True)
     
     def anunciar_y_esperar_clientes(self):
@@ -468,7 +585,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             try:
                 print("\n=== Anunciando servidor y consultando clientes ===")
                 # Anunciar presencia
-                print("📡 Enviando broadcast...")
+                print(">> Enviando broadcast...")
                 ls.anunciar_ip()
                 
                 # Esperar un poco para que clientes respondan
@@ -476,14 +593,14 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 time.sleep(2)
                 
                 # Consultar dispositivos desde CSV
-                print("🔍 Consultando dispositivos...")
+                print(">> Consultando dispositivos...")
                 activos, total = ls.consultar_dispositivos_desde_csv()
                 
-                print(f"✓ Consulta completada: {activos}/{total} dispositivos respondieron")
+                print(f">> Consulta completada: {activos}/{total} dispositivos respondieron")
                 return (activos, total)
                 
             except Exception as e:
-                print(f"✗ Error en consulta: {e}")
+                print(f">> Error en consulta: {e}")
                 import traceback
                 traceback.print_exc()
                 return (0, 0)
@@ -496,22 +613,22 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def on_consulta_terminada(self, resultado):
         """Callback Paso 3 completado"""
         activos, total = resultado
-        self.ui.statusbar.showMessage(f"✓ Paso 3/4: {activos}/{total} clientes respondieron - Actualizando vista...", 0)
+        self.ui.statusbar.showMessage(f">> Paso 3/4: {activos}/{total} clientes respondieron - Actualizando vista...", 0)
         # Paso 4: Recargar tabla
         self.finalizar_escaneo_completo()
     
     def on_consulta_error(self, error):
         """Error en Paso 3"""
-        self.ui.statusbar.showMessage(f"❌ Error consultando clientes: {error}", 5000)
+        self.ui.statusbar.showMessage(f"ERROR: Error consultando clientes: {error}", 5000)
         self.ui.btnActualizar.setEnabled(True)
     
     def finalizar_escaneo_completo(self):
         """Paso 4: Recargar tabla con datos actualizados"""
         print("\n=== Finalizando escaneo completo ===")
         self.cargar_dispositivos()
-        self.ui.statusbar.showMessage("✅ Escaneo completo finalizado exitosamente", 5000)
+        self.ui.statusbar.showMessage(">> Escaneo completo finalizado exitosamente", 5000)
         self.ui.btnActualizar.setEnabled(True)
-        print("✓ Proceso completado\n")
+        print(">> Proceso completado\n")
 
 
 if __name__ == '__main__':

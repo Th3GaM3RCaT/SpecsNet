@@ -37,8 +37,15 @@ def inicializar_db():
 # Inicializar DB al importar el módulo
 inicializar_db()
 
-connection = sqlite3.connect("specs.db")
+connection = sqlite3.connect("specs.db", check_same_thread=False)
 cursor = connection.cursor()
+
+def get_thread_safe_connection():
+    """
+    Crea una nueva conexión SQLite para usar en hilos.
+    Cada hilo debe usar su propia conexión.
+    """
+    return sqlite3.connect("specs.db", check_same_thread=False)
 
 #pasar todas las consultas sql solo con esta funcion
 def abrir_consulta(
@@ -194,6 +201,24 @@ def setActive(dispositivoEstado = tuple()):
                    VALUES (?,?,?)""", (
                        data[0],data[1],data[2]
                        ))#listo
+
+
+def set_dispositivo_inicial(ip, mac):
+    """
+    Inserta o actualiza un dispositivo con información básica (IP y MAC).
+    Si la MAC ya existe, actualiza la IP.
+    Si no existe, crea un nuevo registro con valores por defecto.
+    """
+    # Usar la MAC como clave temporal para el serial si no existe
+    serial_provisional = mac 
+    
+    cursor.execute("""
+        INSERT INTO Dispositivos (serial, MAC, ip, activo) 
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(MAC) DO UPDATE SET
+            ip = excluded.ip;
+    """, (serial_provisional, mac, ip, False))
+    connection.commit()
 
 
 #ejemplo de uso
