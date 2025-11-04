@@ -12,6 +12,31 @@ from PySide6.QtWidgets import QApplication
 from logica_Hilo import Hilo
 from sql_specs import consultas_sql as sql
 
+# Importar configuración de seguridad
+try:
+    from security_config import (
+        verify_auth_token, is_ip_allowed, sanitize_field, # type: ignore
+        MAX_BUFFER_SIZE, CONNECTION_TIMEOUT, MAX_CONNECTIONS_PER_IP
+    )
+    SECURITY_ENABLED = True
+except ImportError:
+    print("⚠️  WARNING: security_config.py no encontrado. Seguridad DESHABILITADA.")
+    print("   Crear security_config.py para habilitar autenticación y rate limiting.")
+    SECURITY_ENABLED = False
+    MAX_BUFFER_SIZE = 10 * 1024 * 1024
+    CONNECTION_TIMEOUT = 30
+    MAX_CONNECTIONS_PER_IP = 3
+    
+    # Funciones dummy cuando security_config no existe
+    def verify_auth_token(token):
+        return True  # Aceptar cualquier token
+    
+    def is_ip_allowed(ip):
+        return True  # Aceptar cualquier IP
+    
+    def sanitize_field(value, max_length=1024):
+        return str(value)[:max_length] if value else ""
+
 import socket as sckt
 HOST = sckt.gethostbyname(sckt.gethostname())
 PORT = 5255
@@ -24,6 +49,8 @@ if app is None:
 archivos_json = glob("*.json")
 # Lista de conexiones activas de clientes
 clientes = []
+# Contador de conexiones por IP (rate limiting)
+connections_per_ip = {}
 
 
 def parsear_datos_dispositivo(json_data):
@@ -32,15 +59,19 @@ def parsear_datos_dispositivo(json_data):
     
     Retorna una tupla con los campos:
     (serial, DTI, user, MAC, model, processor, GPU, RAM, disk, license_status, ip, activo)
+    
+    Security:
+        - Sanitiza todos los campos de texto para prevenir inyecciones
+        - Limita longitud de campos a MAX_FIELD_LENGTH
     """
-    # Extraer datos del JSON
-    serial = json_data.get("SerialNumber", "")
+    # Extraer datos del JSON con sanitización
+    serial = sanitize_field(json_data.get("SerialNumber", ""))
     dti = None  # DTI no viene en el JSON, se asigna manualmente o se calcula
-    user = json_data.get("Name", "")
-    mac = json_data.get("MAC Address", "")
-    model = json_data.get("Model", "")
+    user = sanitize_field(json_data.get("Name", ""))
+    mac = sanitize_field(json_data.get("MAC Address", ""))
+    model = sanitize_field(json_data.get("Model", ""))
     license_status = "con licencia" in json_data.get("License status", "").lower()
-    ip = json_data.get("client_ip", "")
+    ip = sanitize_field(json_data.get("client_ip", ""))
     activo = True  # Si envía datos, está activo
     
     # Parsear datos de DirectX si existe
@@ -50,6 +81,11 @@ def parsear_datos_dispositivo(json_data):
     
     dxdiag_txt = json_data.get("dxdiag_output_txt", "")
     if dxdiag_txt:
+        # SECURITY: Limitar tamaño del campo dxdiag (puede ser MB de texto)
+        if len(dxdiag_txt) > 1024 * 100:  # Máximo 100 KB
+            print(f"⚠️  WARNING: dxdiag_output_txt truncado ({len(dxdiag_txt)} bytes)")
+            dxdiag_txt = dxdiag_txt[:1024 * 100]
+        
         # Buscar Processor
         proc_match = re.search(r"Processor:\s*(.+)", dxdiag_txt)
         if proc_match:
@@ -212,20 +248,70 @@ def parsear_aplicaciones(json_data):
 
 
 def consultar_informacion(conn, addr):
-    """Recibe información del cliente y la almacena en la base de datos."""
+    """Recibe información del cliente y la almacena en la base de datos.
+    
+    Security:
+        - Valida IP contra whitelist de subnets permitidas
+        - Verifica token de autenticación
+        - Limita tamaño de buffer a MAX_BUFFER_SIZE
+        - Aplica timeout de CONNECTION_TIMEOUT segundos
+    """
+    client_ip = addr[0]
     print(f"conectando por {addr}")
+    
+    # SECURITY: Rate limiting - verificar conexiones por IP
+    if SECURITY_ENABLED:
+        global connections_per_ip
+        
+        # Validar IP permitida
+        if not is_ip_allowed(client_ip):
+            print(f"⚠️  SECURITY: IP bloqueada (no está en whitelist): {client_ip}")
+            conn.close()
+            return
+        
+        # Limitar conexiones por IP
+        current_connections = connections_per_ip.get(client_ip, 0)
+        if current_connections >= MAX_CONNECTIONS_PER_IP:
+            print(f"⚠️  SECURITY: Demasiadas conexiones desde {client_ip} ({current_connections})")
+            conn.close()
+            return
+        
+        connections_per_ip[client_ip] = current_connections + 1
+    
     buffer = b""
     
     try:
+        # SECURITY: Establecer timeout de conexión
+        conn.settimeout(CONNECTION_TIMEOUT)
+        
         while True:
             data = conn.recv(4096)
             if not data:
                 break
+            
             buffer += data
+            
+            # SECURITY: Verificar tamaño de buffer
+            if len(buffer) > MAX_BUFFER_SIZE:
+                print(f"⚠️  SECURITY: Buffer excedido desde {client_ip} ({len(buffer)} bytes)")
+                break
             
             # Intentar decodificar y parsear cuando tengamos datos completos
             try:
                 json_data = loads(buffer.decode("utf-8"))
+                
+                # SECURITY: Validar autenticación
+                if SECURITY_ENABLED:
+                    token = json_data.get("auth_token")
+                    if not token:
+                        print(f"⚠️  SECURITY: Token de autenticación faltante desde {client_ip}")
+                        break
+                    
+                    if not verify_auth_token(token):
+                        print(f"⚠️  SECURITY: Token de autenticación inválido desde {client_ip}")
+                        break
+                    
+                    print(f"✓ Token válido desde {client_ip}")
                 
                 # Validar que tenga campos mínimos
                 if "SerialNumber" not in json_data or "MAC Address" not in json_data:
@@ -307,26 +393,95 @@ def consultar_informacion(conn, addr):
         conn.close()
         if conn in clientes:
             clientes.remove(conn)
+        
+        # SECURITY: Decrementar contador de conexiones
+        if SECURITY_ENABLED and client_ip in connections_per_ip:
+            connections_per_ip[client_ip] -= 1
+            if connections_per_ip[client_ip] <= 0:
+                del connections_per_ip[client_ip]
+        
         print(f"desconectado: {addr}")
 
 
 def main():
+    """Inicia el servidor TCP y el sistema de anuncios UDP periódicos.
+    
+    Ejecuta dos threads:
+    - Thread 1: Servidor TCP en puerto 5255 (recibe datos de clientes)
+    - Thread 2: Anuncios UDP periódicos en puerto 37020 (discovery)
+    """
+    # Iniciar anuncios periódicos en thread separado
+    thread_anuncios = Thread(target=anunciar_ip_periodico, args=(10,), daemon=True)
+    thread_anuncios.start()
+    print("✓ Thread de anuncios iniciado")
+    
+    # Servidor TCP principal
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen()
-    print(f"servidor escuchando en puerto {HOST}: {PORT}")
-    while True:
-        conn, addr = server_socket.accept()
-        clientes.append(conn)
-        hilo = Thread(target=consultar_informacion, args=(conn, addr))
-        hilo.start()
+    print(f"✓ Servidor TCP escuchando en {HOST}:{PORT}")
+    print(f"✓ Sistema listo - Esperando clientes...\n")
+    
+    try:
+        while True:
+            conn, addr = server_socket.accept()
+            clientes.append(conn)
+            hilo = Thread(target=consultar_informacion, args=(conn, addr))
+            hilo.start()
+    except KeyboardInterrupt:
+        print("\n✓ Servidor detenido por usuario")
+        server_socket.close()
+    except Exception as e:
+        print(f"❌ Error en servidor: {e}")
+        server_socket.close()
 
 
 def anunciar_ip():
+    """Envía UN broadcast UDP anunciando la IP del servidor.
+    
+    Note:
+        Usado internamente por anunciar_ip_periodico() para envío repetido.
+    """
     global clientes
     broadcast = socket(AF_INET, SOCK_DGRAM)
     broadcast.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-    broadcast.sendto(b"servidor specs", ("255.255.255.255", 37020))
+    try:
+        broadcast.sendto(b"servidor specs", ("255.255.255.255", 37020))
+        print(f"📡 Broadcast enviado a 255.255.255.255:37020")
+    except Exception as e:
+        print(f"❌ Error enviando broadcast: {e}")
+    finally:
+        broadcast.close()
+
+
+def anunciar_ip_periodico(intervalo=10):
+    """Anuncia la IP del servidor periódicamente mediante broadcasts UDP.
+    
+    Args:
+        intervalo (int): Segundos entre cada anuncio (default: 10)
+    
+    Note:
+        Ejecuta en loop infinito. Debe correrse en thread separado.
+        Permite que clientes nuevos detecten el servidor en cualquier momento.
+    """
+    import time
+    print(f"🔄 Iniciando anuncios periódicos cada {intervalo} segundos...")
+    
+    contador = 0
+    try:
+        while True:
+            anunciar_ip()
+            contador += 1
+            
+            # Mostrar estadísticas cada 6 broadcasts
+            if contador % 6 == 0:
+                print(f"📊 Broadcasts enviados: {contador} (clientes conectados: {len(clientes)})")
+            
+            time.sleep(intervalo)
+    except KeyboardInterrupt:
+        print("\n✓ Anuncios detenidos por usuario")
+    except Exception as e:
+        print(f"❌ Error en anuncios periódicos: {e}")
 
 
 def abrir_json(position=0):

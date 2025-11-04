@@ -1,39 +1,106 @@
 import sys
 import socket
+import time
 from logica_Hilo import Hilo
 
 modo_tarea = "--tarea" in sys.argv
 
 def escuchar_broadcast(port=37020, on_message=None):
-    """Escucha broadcasts UDP en el puerto especificado."""
+    """Escucha broadcasts UDP en el puerto especificado.
+    
+    Args:
+        port (int): Puerto UDP donde escuchar broadcasts
+        on_message (callable): Callback que recibe (mensaje, direccion) cuando llega broadcast
+    
+    Note:
+        Ejecuta en loop infinito hasta Ctrl+C. Ideal para modo daemon.
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('', port))
-    print(f"Escuchando broadcast en puerto {port}...")
+    print(f"✓ Escuchando broadcasts en puerto {port}...")
 
     try:
         while True:
             data, addr = sock.recvfrom(1024)
             mensaje = data.decode(errors="ignore")
-            print(f"Mensaje recibido de {addr}: {mensaje}")
+            print(f"📡 Broadcast recibido de {addr[0]}: {mensaje}")
             
             if on_message:
                 try:
                     on_message(mensaje, addr)
                 except Exception as e:
-                    print(f"Error en callback: {e}")
+                    print(f"❌ Error en callback: {e}")
+                    import traceback
+                    traceback.print_exc()
     except KeyboardInterrupt:
-        print("Cliente detenido.")
+        print("\n✓ Cliente detenido por usuario.")
+    except Exception as e:
+        print(f"❌ Error en escucha: {e}")
     finally:
         sock.close()
 
 
 if modo_tarea:
-    # Modo tarea programada: escucha broadcasts en background
-    import threading
-    hilo = threading.Thread(target=escuchar_broadcast, daemon=True)
-    hilo.start()
-    hilo.join()
+    # Modo tarea programada: escucha broadcasts y responde automáticamente
+    print("=" * 70)
+    print("🤖 MODO TAREA ACTIVADO")
+    print("=" * 70)
+    print("Esperando solicitud del servidor...")
+    print("Presiona Ctrl+C para detener\n")
+    
+    import logica_specs as lsp
+    from datetime import datetime
+    
+    # Cooldown para evitar múltiples ejecuciones
+    ultima_ejecucion = 0
+    COOLDOWN_SEGUNDOS = 60  # Esperar 60 segundos entre ejecuciones
+    
+    def manejar_broadcast(mensaje, addr):
+        """Callback que se ejecuta al recibir broadcast del servidor."""
+        global ultima_ejecucion
+        
+        # Verificar si es el mensaje del servidor
+        if "servidor specs" in mensaje.lower():
+            servidor_ip = addr[0]
+            print(f"\n{'='*70}")
+            print(f"🎯 Servidor detectado en {servidor_ip}")
+            
+            # Verificar cooldown
+            tiempo_actual = time.time()
+            if tiempo_actual - ultima_ejecucion < COOLDOWN_SEGUNDOS:
+                tiempo_restante = int(COOLDOWN_SEGUNDOS - (tiempo_actual - ultima_ejecucion))
+                print(f"⏳ Cooldown activo. Esperar {tiempo_restante} segundos...")
+                print(f"{'='*70}\n")
+                return
+            
+            ultima_ejecucion = tiempo_actual
+            
+            print(f"📊 Iniciando recopilación de especificaciones...")
+            print(f"⏰ Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            try:
+                # 1. Ejecutar informe (recopilar datos del sistema)
+                print("\n1️⃣ Recopilando datos del sistema...")
+                lsp.informe()
+                print("   ✓ Datos recopilados exitosamente")
+                
+                # 2. Enviar datos al servidor
+                print("\n2️⃣ Enviando datos al servidor...")
+                lsp.enviar_a_servidor()
+                print("   ✓ Datos enviados al servidor")
+                
+                print(f"\n✅ Proceso completado exitosamente")
+                print(f"{'='*70}\n")
+                
+            except Exception as e:
+                print(f"\n❌ Error durante el proceso: {e}")
+                import traceback
+                traceback.print_exc()
+                print(f"{'='*70}\n")
+    
+    # Ejecutar escucha con callback
+    escuchar_broadcast(port=37020, on_message=manejar_broadcast)
 else:
     # Modo GUI: interfaz gráfica
     from sys import argv

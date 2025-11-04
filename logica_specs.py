@@ -183,7 +183,8 @@ def enviar_a_servidor():
     3. Guarda info del servidor en servidor.json
     4. Lee dxdiag_output.txt y lo incluye en el JSON
     5. Detecta IP local del cliente
-    6. Envía JSON completo vía TCP al servidor puerto 5255
+    6. Genera token de autenticación (si security_config disponible)
+    7. Envía JSON completo vía TCP al servidor puerto 5255
     
     Returns:
         None
@@ -193,18 +194,34 @@ def enviar_a_servidor():
     
     Note:
         Modifica el diccionario global `new` agregando dxdiag_output_txt y client_ip.
+    
+    Security:
+        Genera token de autenticación basado en timestamp y secreto compartido.
     """
-    PORT = 5255
+    # Importar seguridad si está disponible
+    try:
+        from security_config import generate_auth_token
+        security_available = True
+    except ImportError:
+        security_available = False
+        print("⚠️  WARNING: security_config no disponible, enviando sin autenticación")
+    
+    DISCOVERY_PORT = 37020  # Puerto para escuchar broadcasts del servidor
+    TCP_PORT = 5255         # Puerto TCP del servidor para enviar datos
     txt_data = ""
+    
+    # Escuchar broadcasts en puerto 37020
     s = socket(AF_INET, SOCK_DGRAM)
     s.settimeout(5)
-    s.bind(("", PORT))
+    s.bind(("", DISCOVERY_PORT))
+    print(f"🔍 Buscando servidor (escuchando broadcasts en puerto {DISCOVERY_PORT})...")
     
 
     try:
-        # Descubrir servidor vía UDP
-        addr = s.recvfrom(1024)
+        # Descubrir servidor vía UDP broadcast
+        data, addr = s.recvfrom(1024)
         HOST = addr[0]
+        s.close()  # Cerrar socket UDP
         
         print("Servidor encontrado:", HOST)
 
@@ -221,21 +238,33 @@ def enviar_a_servidor():
         try:
             # Obtener IP local conectando al servidor
             temp_sock = socket(AF_INET, SOCK_DGRAM)
-            temp_sock.connect((HOST, PORT))
+            temp_sock.connect((HOST, TCP_PORT))
             new["client_ip"] = temp_sock.getsockname()[0]
             temp_sock.close()
         except:
             new["client_ip"] = "unknown"
-
+        
+        # SECURITY: Agregar token de autenticación
+        if security_available:
+            try:
+                new["auth_token"] = generate_auth_token() # type: ignore
+                print("✓ Token de autenticación agregado")
+            except ValueError as e:
+                print(f"⚠️  ERROR generando token: {e}")
+                print("   Configurar SHARED_SECRET en security_config.py")
+                return  # No enviar sin autenticación si está habilitada
+        
         # Conectar vía TCP y enviar todo
+        print(f"🔌 Conectando al servidor {HOST}:{TCP_PORT}...")
         cliente = socket(AF_INET, SOCK_STREAM)
-        cliente.connect((HOST, PORT))
+        cliente.connect((HOST, TCP_PORT))
         cliente.sendall(dumps(new).encode("utf-8"))
         cliente.close()
-        print("Datos enviados correctamente")
+        print("✓ Datos enviados correctamente al servidor")
 
     except timeout:
-        print("No se encontró el servidor")
+        print("❌ Timeout: No se encontró el servidor (esperó 5 segundos)")
+        print("   Verificar que el servidor esté ejecutándose")
 
 
 def configurar_tarea(valor=1):
@@ -250,15 +279,37 @@ def configurar_tarea(valor=1):
     Note:
         Usa registro HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run
         para ejecutar specs.py --tarea al iniciar Windows.
+        
+    Security:
+        Usa subprocess con lista de argumentos (NO shell=True) para prevenir inyección.
     """
+    import re
+    from pathlib import Path
+    
+    # Validar nombre_tarea contra caracteres peligrosos
+    if not re.match(r'^[a-zA-Z0-9_-]+$', nombre_tarea):
+        raise ValueError(f"Nombre de tarea inválido: {nombre_tarea}. Solo se permiten letras, números, guiones y guiones bajos.")
+    
     accion = ["add", "query", "delete"]
-    modo = '\\"C:\\Python39\\python.exe\\" '
-    if getattr(sys, "frozen", False):
-        modo = ""
-    agregar = '/d "{modo}\\"{script_path}\\" --tarea" /f'
-    if valor == 1:
-        agregar = ""
-    if valor == 2:
-        agregar = "/f"
-    comando = f'reg {accion[valor]} "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v {nombre_tarea} {agregar} '
-    run(comando, shell=True, creationflags=CREATE_NO_WINDOW)
+    reg_key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+    
+    # Construir argumentos como lista (NO string)
+    cmd_args = ["reg", accion[valor], reg_key, "/v", nombre_tarea]
+    
+    if valor == 0:  # Agregar tarea
+        # Obtener path del script actual
+        if getattr(sys, "frozen", False):
+            # Ejecutable empaquetado
+            script_path = sys.executable
+        else:
+            # Script Python
+            script_path = str(Path(__file__).parent / "specs.py")
+        
+        # Agregar parámetros de valor
+        cmd_args.extend(["/d", f'"{script_path}" --tarea', "/f"])
+    elif valor == 2:  # Eliminar tarea
+        cmd_args.append("/f")
+    # valor == 1 (query) no necesita parámetros adicionales
+    
+    # Ejecutar sin shell (seguro)
+    run(cmd_args, creationflags=CREATE_NO_WINDOW, check=False)
