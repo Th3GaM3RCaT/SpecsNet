@@ -6,20 +6,31 @@ from os.path import join, exists
 # Inicializar base de datos
 def inicializar_db():
     """Crea las tablas de la base de datos si no existen."""
+    from pathlib import Path
+    
     # Detecta si está corriendo empaquetado con PyInstaller
     if hasattr(sys, "_MEIPASS"):
-        base_path = join(sys._MEIPASS, "sql_specs") # type: ignore
+        meipass_path = getattr(sys, "_MEIPASS")
+        base_path = Path(meipass_path) / "sql"
     else:
-        base_path = "sql_specs"
+        # Buscar relativo al archivo actual
+        base_path = Path(__file__).parent
     
-    schema_path = join(base_path, "specs.sql")
+    schema_path = base_path / "specs.sql"
+    
+    # Base de datos en carpeta data/
+    if hasattr(sys, "_MEIPASS"):
+        db_path = "specs.db"  # En empaquetado, junto al ejecutable
+    else:
+        db_path = Path(__file__).parent.parent.parent / "data" / "specs.db"
+        db_path.parent.mkdir(exist_ok=True)
     
     try:
         with open(schema_path, "r", encoding="utf-8") as f:
             schema_sql = f.read()
         
         # Conectar y ejecutar schema
-        conn = sqlite3.connect("specs.db")
+        conn = sqlite3.connect(str(db_path))
         cur = conn.cursor()
         
         # Verificar si ya existen las tablas
@@ -37,7 +48,14 @@ def inicializar_db():
 # Inicializar DB al importar el módulo
 inicializar_db()
 
-connection = sqlite3.connect("specs.db", check_same_thread=False)
+# Path a la base de datos
+from pathlib import Path
+if hasattr(sys, "_MEIPASS"):
+    DB_PATH = "specs.db"
+else:
+    DB_PATH = str(Path(__file__).parent.parent.parent / "data" / "specs.db")
+
+connection = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = connection.cursor()
 
 def get_thread_safe_connection():
@@ -45,7 +63,7 @@ def get_thread_safe_connection():
     Crea una nueva conexión SQLite para usar en hilos.
     Cada hilo debe usar su propia conexión.
     """
-    return sqlite3.connect("specs.db", check_same_thread=False)
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 #pasar todas las consultas sql solo con esta funcion
 def abrir_consulta(
@@ -72,11 +90,12 @@ def abrir_consulta(
     """
     # Detecta si está corriendo empaquetado con PyInstaller
     if hasattr(sys, "_MEIPASS"):
-        base_path = join(sys._MEIPASS, "sql_specs", "statement") # type: ignore
+        meipass_path = getattr(sys, "_MEIPASS")
+        base_path = Path(meipass_path) / "sql" / "statement"
     else:
-        base_path = join("sql_specs", "statement")
+        base_path = Path(__file__).parent / "statement"
     
-    ruta = join(base_path, consulta_sql)
+    ruta = base_path / consulta_sql
     with open(ruta, "r", encoding="utf-8") as f:
         statements = f.read().strip()
     

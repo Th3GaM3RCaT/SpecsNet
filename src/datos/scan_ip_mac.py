@@ -13,10 +13,16 @@ import os
 import csv
 import time
 from datetime import datetime
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ASSUME_CIDR = "/16"   # ajusta si tu red no es /24
 CONCURRENCY = 300
+
+# Directorio para archivos de salida
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
 def get_local_network():
     """Detecta la red local basándose en la IP del equipo."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -26,7 +32,6 @@ def get_local_network():
     finally:
         s.close()
     return ipaddress.ip_network(ip + ASSUME_CIDR, strict=False)
-
 
 async def ping_one(host):
     """Ejecuta ping asíncrono a un host. Retorna True si responde."""
@@ -64,10 +69,17 @@ async def ping_sweep(network, concurrency=200):
     return alive
 
 
-def _ping_ip_sync(ip, timeout=1):
+def _ping_ip_sync(ip: str, timeout: float = 1.0) -> bool:
     """
     Ping síncrono para uso en ThreadPoolExecutor.
     Retorna True si el host responde.
+    
+    Args:
+        ip: Dirección IP a hacer ping
+        timeout: Timeout en segundos (acepta float)
+    
+    Returns:
+        True si el host responde, False en caso contrario
     """
     system = platform.system()
     if system == "Windows":
@@ -283,7 +295,7 @@ def update_csv_with_macs(
     if ping_missing and missing_ips:
         print(f"Pinging {len(missing_ips)} IPs (timeout={ping_timeout}s, workers={workers}) to populate ARP...")
         with ThreadPoolExecutor(max_workers=min(workers, len(missing_ips))) as ex:
-            futures = {ex.submit(_ping_ip_sync, ip, ping_timeout): ip for ip in missing_ips} # type: ignore
+            futures = {ex.submit(_ping_ip_sync, ip, ping_timeout): ip for ip in missing_ips}
             for fut in as_completed(futures):
                 ip = futures[fut]
                 try:
@@ -329,11 +341,11 @@ def update_csv_with_macs(
             output_csv_path = f"{base}_with_macs{ext}"
     
     # Construir header: conservar campos originales, asegurar columna 'mac'
-    orig_fieldnames = fields[:] if fields else ["ip", "mac"]
+    orig_fieldnames: list[str] = list(fields) if fields else ["ip", "mac"]
     low = [h.lower() for h in orig_fieldnames]
     if "mac" not in low:
-        orig_fieldnames.append("mac") # type: ignore
-    
+        orig_fieldnames.append("mac")
+
     with open(output_csv_path, "w", newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=orig_fieldnames)
         writer.writeheader()
@@ -385,7 +397,7 @@ def main():
     raw = parse_arp_table_raw()
     kept, discarded = filter_entries(raw, network)
     
-    csv_name = f"scan_clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    csv_name = OUTPUT_DIR / f"scan_clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     try:
         with open(csv_name, "w", newline="") as f:
             w = csv.writer(f)

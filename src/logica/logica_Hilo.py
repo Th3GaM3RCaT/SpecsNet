@@ -2,6 +2,7 @@
 from PySide6.QtCore import QObject, QThread, Signal
 
 class Hilo(QObject):
+    """Ejecuta función en hilo separado para no bloquear UI."""
     terminado = Signal(object)
     error = Signal(str)
 
@@ -10,10 +11,10 @@ class Hilo(QObject):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.thread = QThread()  # type: ignore
-        self.moveToThread(self.thread)  # type: ignore
-        self.thread.started.connect(self._run)  # type: ignore
-        self.thread.finished.connect(self.thread.deleteLater)  # type: ignore
+        self._qthread = QThread()
+        self.moveToThread(self._qthread)
+        self._qthread.started.connect(self._run)
+        self._qthread.finished.connect(self._qthread.deleteLater)
 
     def _run(self):
         try:
@@ -22,10 +23,10 @@ class Hilo(QObject):
         except Exception as e:
             self.error.emit(str(e))
         finally:
-            self.thread.quit()  # type: ignore
+            self._qthread.quit()
 
     def start(self):
-        self.thread.start()  # type: ignore
+        self._qthread.start()
 
 
 class HiloConProgreso(QObject):
@@ -39,10 +40,10 @@ class HiloConProgreso(QObject):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.thread = QThread()  # type: ignore
-        self.moveToThread(self.thread)  # type: ignore
-        self.thread.started.connect(self._run)  # type: ignore
-        self.thread.finished.connect(self.thread.deleteLater)  # type: ignore
+        self._qthread = QThread()
+        self.moveToThread(self._qthread)
+        self._qthread.started.connect(self._run)
+        self._qthread.finished.connect(self._qthread.deleteLater)
 
     def _run(self):
         try:
@@ -52,7 +53,7 @@ class HiloConProgreso(QObject):
         except Exception as e:
             self.error.emit(str(e))
         finally:
-            self.thread.quit()  # type: ignore
+            self._qthread.quit()
 
     def start(self):
-        self.thread.start()  # type: ignore
+        self._qthread.start()

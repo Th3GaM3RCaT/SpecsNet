@@ -1,0 +1,2 @@
+# Este archivo mantiene la carpeta data/ en Git
+# La carpeta data/ contiene archivos de runtime que no se deben commitear

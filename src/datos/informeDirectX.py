@@ -1,4 +1,10 @@
 import subprocess
+from pathlib import Path
+
+# Directorio para archivos de salida
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+DXDIAG_OUTPUT = OUTPUT_DIR / "dxdiag_output.txt"
 
 def get_from_inform(objeto="Card name:"):
     """
@@ -13,12 +19,12 @@ def get_from_inform(objeto="Card name:"):
     try:
         # Generar reporte DirectX
         subprocess.check_output(
-            ["dxdiag", "/t", "dxdiag_output.txt"],
+            ["dxdiag", "/t", str(DXDIAG_OUTPUT)],
             text=True
         )
         
         # Leer y parsear
-        with open("dxdiag_output.txt", "r", encoding="cp1252") as f:
+        with open(DXDIAG_OUTPUT, "r", encoding="cp1252") as f:
             lines = f.readlines()
         
         resultados = []

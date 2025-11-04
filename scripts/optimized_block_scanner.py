@@ -18,13 +18,16 @@ import csv
 import sys
 import select
 import os
+from pathlib import Path
 from itertools import islice
 
-# Importar función de población de MACs
+# Importar función de población de MACs desde src/
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'datos'))
-from datos.scan_ip_mac import update_csv_with_macs
+# Agregar src/ al path para importar módulos
+src_path = os.path.join(os.path.dirname(__file__), '..', 'src')
+sys.path.insert(0, src_path)
+from datos.scan_ip_mac import update_csv_with_macs  # type: ignore[import]
 
 # ------------------ CONFIGURACIÓN OPTIMIZADA ------------------
 START_SEGMENT = 100
@@ -36,7 +39,11 @@ CONCURRENCY = 300
 PROBE_TIMEOUT = 0.9
 MAX_PARALLEL_SEGMENTS = 10
 USE_BROADCAST_PROBE = True
-CSV_FILENAME = "discovered_devices.csv"
+
+# Directorio para archivos de salida
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+CSV_FILENAME = OUTPUT_DIR / "discovered_devices.csv"
 
 SSDP_MSEARCH = '\r\n'.join([
     'M-SEARCH * HTTP/1.1',
@@ -145,6 +152,7 @@ def probe_ssdp(segment_network, iface_ip=None, timeout=1.0, use_broadcast=True):
 def probe_mdns(segment_network, iface_ip=None, timeout=1.0):
     """Síncrono: pequeño probe mDNS. Devuelve set IPs."""
     results = set()
+    msock = None
     try:
         msock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         msock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -177,10 +185,11 @@ def probe_mdns(segment_network, iface_ip=None, timeout=1.0):
                     continue
                 results.add(addr[0])
     finally:
-        try:
-            msock.close() # type: ignore
-        except Exception:
-            pass
+        if msock:
+            try:
+                msock.close()
+            except Exception:
+                pass
     return results
 
 # ------------------ PING CHUNKED (async) ------------------
@@ -255,7 +264,13 @@ async def ping_sweep_chunked(network, chunk_size, per_host_timeout, per_subnet_t
     return sorted(set(alive), key=lambda s: tuple(int(x) for x in s.split(".")))
 
 # ------------------ ARP PARSING ------------------
-def parse_arp_table(): # type: ignore
+def parse_arp_table() -> list[tuple[str, str]]:
+    """
+    Parsea la tabla ARP del sistema para obtener entradas IP→MAC.
+    
+    Returns:
+        Lista de tuplas (ip, mac) con las entradas encontradas
+    """
     entries = []
     try:
         proc = subprocess.run(["ip", "neigh"], capture_output=True, text=True, check=False)

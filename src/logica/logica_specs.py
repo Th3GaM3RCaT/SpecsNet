@@ -3,6 +3,7 @@ from datetime import datetime
 from json import dump, dumps
 from locale import getpreferredencoding
 from os import environ, name, path
+from pathlib import Path
 from re import IGNORECASE, search
 from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket, timeout
 from subprocess import CREATE_NO_WINDOW, run
@@ -45,7 +46,7 @@ def informe():
     """
     my_system = WMI().Win32_ComputerSystem()[0]
 
-    from datos.serialNumber import get_serial
+    from ..datos.serialNumber import get_serial
     new["SerialNumber"] = get_serial()
     new["Manufacturer"] = my_system.Manufacturer
     new["Model"] = my_system.Model
@@ -80,7 +81,7 @@ def informe():
     new[f"Percentage virtual memory"] = f" {svmem.percent}%"
 
 
-    from datos.get_ram import get_ram_info
+    from ..datos.get_ram import get_ram_info
 
     for i, ram in enumerate(get_ram_info(), 1):
         new[f"--- Módulo RAM {i} ---"] = ""
@@ -109,8 +110,9 @@ def informe():
         new["  Percentage"] = f" {partition_usage.percent}%"
 
     disk_io = psutil.disk_io_counters()
-    new["Total read"] = f"{get_size(disk_io.read_bytes)}"  # type: ignore
-    new["Total write"] = f" {get_size(disk_io.write_bytes)}"  # type: ignore
+    if disk_io:
+        new["Total read"] = f"{get_size(disk_io.read_bytes)}"
+        new["Total write"] = f" {get_size(disk_io.write_bytes)}"
 
     if_addrs = psutil.net_if_addrs()
     for interface_name, interface_addresses in if_addrs.items():
@@ -199,8 +201,16 @@ def enviar_a_servidor():
         Genera token de autenticación basado en timestamp y secreto compartido.
     """
     # Importar seguridad si está disponible
+    generate_auth_token = None
+    security_available = False
+    
     try:
-        from security_config import generate_auth_token
+        import sys
+        # Agregar directorio config al path
+        config_dir = Path(__file__).parent.parent.parent / "config"
+        sys.path.insert(0, str(config_dir))
+        
+        from security_config import generate_auth_token  # type: ignore[import]
         security_available = True
     except ImportError:
         security_available = False
@@ -209,7 +219,7 @@ def enviar_a_servidor():
     DISCOVERY_PORT = 37020  # Puerto para escuchar broadcasts del servidor
     TCP_PORT = 5255         # Puerto TCP del servidor para enviar datos
     txt_data = ""
-    
+
     # Escuchar broadcasts en puerto 37020
     s = socket(AF_INET, SOCK_DGRAM)
     s.settimeout(5)
@@ -225,11 +235,15 @@ def enviar_a_servidor():
         
         print("Servidor encontrado:", HOST)
 
+        # Directorio para archivos de salida
+        output_dir = Path(__file__).parent.parent.parent / "output"
+        output_dir.mkdir(exist_ok=True)
+        
         # Guardar info del servidor localmente
-        with open("servidor.json", "w", encoding="utf-8") as f:
+        with open(output_dir / "servidor.json", "w", encoding="utf-8") as f:
             dump(addr, f, indent=4)
 
-        with open("dxdiag_output.txt", "r", encoding="cp1252") as f:
+        with open(output_dir / "dxdiag_output.txt", "r", encoding="cp1252") as f:
             txt_data = f.read()
         # Incluir el TXT dentro del JSON
         new["dxdiag_output_txt"] = txt_data
@@ -245,9 +259,9 @@ def enviar_a_servidor():
             new["client_ip"] = "unknown"
         
         # SECURITY: Agregar token de autenticación
-        if security_available:
+        if security_available and generate_auth_token:
             try:
-                new["auth_token"] = generate_auth_token() # type: ignore
+                new["auth_token"] = generate_auth_token()
                 print("✓ Token de autenticación agregado")
             except ValueError as e:
                 print(f"⚠️  ERROR generando token: {e}")

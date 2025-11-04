@@ -3,10 +3,10 @@ from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import QMainWindow
 import sys
 import asyncio
-from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
-from sql_specs.consultas_sql import cursor, abrir_consulta  # Funciones de DB
-import logica_servidor as ls  # Importar lógica del servidor
-from logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
+from ..ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
+from ..sql.consultas_sql import cursor, abrir_consulta  # Funciones de DB
+from . import logica_servidor as ls  # Importar lógica del servidor
+from .logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
 
 class InventarioWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -38,9 +38,10 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.btnVerMemoria.clicked.connect(self.ver_memoria)
         self.ui.btnVerHistorialCambios.clicked.connect(self.ver_historial)
         
-        # Botón de escaneo inicial
-        if hasattr(self.ui, 'btnEscanear'):
-            self.ui.btnEscanear.clicked.connect(self.iniciar_escaneo_completo) # type: ignore
+        # Botón de escaneo inicial (opcional)
+        btn_escanear = getattr(self.ui, 'btnEscanear', None)
+        if btn_escanear:
+            btn_escanear.clicked.connect(self.iniciar_escaneo_completo)
         self.configurar_tabla()
         
         # Deshabilitar botones hasta seleccionar dispositivo
@@ -269,7 +270,10 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         
         # Obtener serial de la fila seleccionada
         row = selected_items[0].row()
-        serial = self.ui.tableDispositivos.item(row, 2).text() # type: ignore
+        serial_item = self.ui.tableDispositivos.item(row, 2)
+        if not serial_item:
+            return
+        serial = serial_item.text()
         
         # Cargar detalles
         self.cargar_detalles_dispositivo(serial)
@@ -375,16 +379,16 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             lic_item = self.ui.tableDispositivos.item(row, 8)
             
             mostrar = True
-            if filtro == "Activos":
-                mostrar = "Inactivo" not in estado_item.text() # type: ignore
-            elif filtro == "Inactivos":
-                mostrar = "Inactivo" in estado_item.text() # type: ignore
-            elif filtro == "Encendidos":
-                mostrar = "Encendido" in estado_item.text() # type: ignore
-            elif filtro == "Apagados":
-                mostrar = "Apagado" in estado_item.text() # type: ignore
-            elif filtro == "Sin Licencia":
-                mostrar = "Inactiva" in lic_item.text() # type: ignore
+            if filtro == "Activos" and estado_item:
+                mostrar = "Inactivo" not in estado_item.text()
+            elif filtro == "Inactivos" and estado_item:
+                mostrar = "Inactivo" in estado_item.text()
+            elif filtro == "Encendidos" and estado_item:
+                mostrar = "Encendido" in estado_item.text()
+            elif filtro == "Apagados" and estado_item:
+                mostrar = "Apagado" in estado_item.text()
+            elif filtro == "Sin Licencia" and lic_item:
+                mostrar = "Inactiva" in lic_item.text()
             
             self.ui.tableDispositivos.setRowHidden(row, not mostrar)
         
@@ -397,41 +401,51 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         """Abre ventana de diagnóstico completo"""
         selected = self.ui.tableDispositivos.selectedItems()
         if selected:
-            serial = self.ui.tableDispositivos.item(selected[0].row(), 2).text() # type: ignore
-            QtWidgets.QMessageBox.information(self, "Diagnóstico", 
-                                            f"Abriendo diagnóstico completo de {serial}")
+            serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
+            if serial_item:
+                serial = serial_item.text()
+                QtWidgets.QMessageBox.information(self, "Diagnóstico", 
+                                                f"Abriendo diagnóstico completo de {serial}")
     
     def ver_aplicaciones(self):
         """Abre ventana de aplicaciones instaladas"""
         selected = self.ui.tableDispositivos.selectedItems()
         if selected:
-            serial = self.ui.tableDispositivos.item(selected[0].row(), 2).text() # type: ignore
-            QtWidgets.QMessageBox.information(self, "Aplicaciones", 
-                                            f"Mostrando aplicaciones instaladas en {serial}")
+            serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
+            if serial_item:
+                serial = serial_item.text()
+                QtWidgets.QMessageBox.information(self, "Aplicaciones", 
+                                                f"Mostrando aplicaciones instaladas en {serial}")
     
     def ver_almacenamiento(self):
         """Abre ventana de detalles de almacenamiento"""
         selected = self.ui.tableDispositivos.selectedItems()
         if selected:
-            serial = self.ui.tableDispositivos.item(selected[0].row(), 2).text() # type: ignore
-            QtWidgets.QMessageBox.information(self, "Almacenamiento", 
-                                            f"Detalles de almacenamiento de {serial}")
+            serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
+            if serial_item:
+                serial = serial_item.text()
+                QtWidgets.QMessageBox.information(self, "Almacenamiento", 
+                                                f"Detalles de almacenamiento de {serial}")
     
     def ver_memoria(self):
         """Abre ventana de detalles de memoria"""
         selected = self.ui.tableDispositivos.selectedItems()
         if selected:
-            serial = self.ui.tableDispositivos.item(selected[0].row(), 2).text() # type: ignore
-            QtWidgets.QMessageBox.information(self, "Memoria RAM", 
-                                            f"Detalles de memoria RAM de {serial}")
+            serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
+            if serial_item:
+                serial = serial_item.text()
+                QtWidgets.QMessageBox.information(self, "Memoria RAM", 
+                                                f"Detalles de memoria RAM de {serial}")
     
     def ver_historial(self):
         """Abre ventana de historial completo de cambios"""
         selected = self.ui.tableDispositivos.selectedItems()
         if selected:
-            serial = self.ui.tableDispositivos.item(selected[0].row(), 2).text() # type: ignore
-            QtWidgets.QMessageBox.information(self, "Historial", 
-                                            f"Historial completo de cambios de {serial}")
+            serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
+            if serial_item:
+                serial = serial_item.text()
+                QtWidgets.QMessageBox.information(self, "Historial", 
+                                                f"Historial completo de cambios de {serial}")
     
     def iniciar_escaneo_completo(self):
         """

@@ -9,13 +9,26 @@ import re
 import asyncio
 
 from PySide6.QtWidgets import QApplication
-from logica_Hilo import Hilo
-from sql_specs import consultas_sql as sql
+from .logica_Hilo import Hilo
+from ..sql import consultas_sql as sql
 
 # Importar configuración de seguridad
+from typing import Callable, Optional
+
+# Declarar como variables opcionales que pueden ser None o funciones
+verify_auth_token: Optional[Callable] = None  # type: ignore[assignment]
+is_ip_allowed: Optional[Callable] = None  # type: ignore[assignment]
+sanitize_field: Optional[Callable] = None  # type: ignore[assignment]
+
 try:
-    from security_config import (
-        verify_auth_token, is_ip_allowed, sanitize_field, # type: ignore
+    import sys
+    from pathlib import Path
+    # Agregar directorio config al path
+    config_dir = Path(__file__).parent.parent.parent / "config"
+    sys.path.insert(0, str(config_dir))
+    
+    from security_config import (  # type: ignore[import]
+        verify_auth_token, is_ip_allowed, sanitize_field,
         MAX_BUFFER_SIZE, CONNECTION_TIMEOUT, MAX_CONNECTIONS_PER_IP
     )
     SECURITY_ENABLED = True
@@ -26,7 +39,7 @@ except ImportError:
     MAX_BUFFER_SIZE = 10 * 1024 * 1024
     CONNECTION_TIMEOUT = 30
     MAX_CONNECTIONS_PER_IP = 3
-    
+
     # Funciones dummy cuando security_config no existe
     def verify_auth_token(token):
         return True  # Aceptar cualquier token

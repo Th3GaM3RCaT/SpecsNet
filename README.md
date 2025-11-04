@@ -1,12 +1,106 @@
 # Sistema de Inventario de Hardware en Red
 
-## Descripción General
-
 Sistema cliente-servidor para Windows que recopila especificaciones de hardware/software de equipos en red, almacena la información en una base de datos SQLite y presenta una interfaz gráfica para visualización y gestión.
+
+## 📁 Estructura del Proyecto
+
+```
+specs-python/
+│
+├── 📂 src/                          # Código fuente principal
+│   ├── specs.py                     # Cliente (entry point)
+│   ├── servidor.py                  # Servidor (entry point)
+│   ├── all_specs.py                 # Inventario completo (entry point)
+│   │
+│   ├── 📂 logica/                   # Lógica de negocio
+│   │   ├── logica_specs.py          # Recolección de datos del sistema
+│   │   ├── logica_servidor.py       # Servidor TCP/UDP + procesamiento
+│   │   ├── logica_Hilo.py           # Threading helpers (Hilo, HiloConProgreso)
+│   │   └── mainServidor.py          # UI principal del servidor
+│   │
+│   ├── 📂 datos/                    # Módulos de recolección de datos
+│   │   ├── scan_ip_mac.py           # Escaneo de red + resolución MAC
+│   │   ├── get_ram.py               # Información de módulos RAM
+│   │   ├── informeDirectX.py        # Parseo de dxdiag
+│   │   ├── ipAddress.py             # Detección de IP local
+│   │   └── serialNumber.py          # Número de serie del equipo
+│   │
+│   ├── 📂 sql/                      # Capa de base de datos
+│   │   ├── consultas_sql.py         # Funciones de acceso a DB
+│   │   ├── specs.sql                # Schema de la base de datos
+│   │   └── 📂 statement/            # Queries SQL parametrizadas
+│   │       ├── Dispositivos-select.sql
+│   │       ├── activo-select.sql
+│   │       └── ... (otros queries)
+│   │
+│   └── 📂 ui/                       # Interfaces Qt Designer
+│       ├── specs_window.ui          # Diseño cliente
+│       ├── specs_window_ui.py       # Auto-generado por extensión
+│       ├── servidor_specs_window.ui
+│       ├── servidor_specs_window_ui.py
+│       ├── inventario.ui
+│       ├── inventario_ui.py
+│       ├── all_specs.ui
+│       └── all_specs_ui.py
+│
+├── 📂 scripts/                      # Scripts de utilidad
+│   ├── build_all.ps1                # Compilar con PyInstaller
+│   ├── sign_executables.ps1         # Firmar ejecutables
+│   ├── create_self_signed_cert.ps1  # Crear certificado para testing
+│   ├── install.ps1                  # Instalador desde código fuente
+│   └── optimized_block_scanner.py   # Escáner masivo de red
+│
+├── 📂 tests/                        # Tests automatizados
+│   └── test_connectivity.py         # Tests de conectividad cliente-servidor
+│
+├── 📂 docs/                         # Documentación
+│   ├── DISTRIBUCION.md              # Guía completa de distribución
+│   ├── DISTRIBUCION_RAPIDA.md       # Guía rápida
+│   ├── NETWORK_FLOW.md              # Arquitectura de red
+│   ├── SECURITY_README.md           # Configuración de seguridad
+│   └── REORGANIZACION.md            # Historial de reorganización
+│
+├── 📂 config/                       # Configuración
+│   └── security_config.example.py   # Template de configuración de seguridad
+│
+├── 📂 data/                         # Datos de runtime (ignorado por Git)
+│   ├── specs.db                     # Base de datos SQLite
+│   └── .gitkeep
+│
+├── requirements.txt                 # Dependencias Python
+├── .gitignore                       # Archivos ignorados por Git
+└── README.md                        # Este archivo
+```
+
+## 🚀 Inicio Rápido
+
+### Instalación
+
+```powershell
+# Clonar repositorio
+git clone https://github.com/Th3GaM3RCaT/specs-python.git
+cd specs-python
+
+# Ejecutar instalador automático
+.\scripts\install.ps1
+```
+
+### Ejecución
+
+```powershell
+# Iniciar servidor
+python src/servidor.py
+
+# Iniciar cliente (GUI)
+python src/specs.py
+
+# Iniciar cliente (modo tarea)
+python src/specs.py --tarea
+```
 
 ## Arquitectura del Sistema
 
-### 1. **Cliente (`specs.py`)**
+### 1. **Cliente (`src/specs.py`)**
 Aplicación que se ejecuta en cada equipo de la red para recopilar y enviar información.
 
 #### Modos de Ejecución:
