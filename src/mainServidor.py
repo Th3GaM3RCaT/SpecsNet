@@ -3,10 +3,10 @@ from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import QMainWindow
 import sys
 import asyncio
-from ..ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
-from ..sql.consultas_sql import cursor, abrir_consulta  # Funciones de DB
-from . import logica_servidor as ls  # Importar lógica del servidor
-from .logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
+from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
+from sql.consultas_sql import cursor, abrir_consulta  # Funciones de DB
+from logica import logica_servidor as ls  # Importar lógica del servidor
+from logica.logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
 
 class InventarioWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -684,12 +684,11 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         print(">> Proceso completado\n")
 
 
-if __name__ == '__main__':
-    # Usar instancia existente si ya hay una, o crear nueva
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    
-    window = InventarioWindow()
-    window.show()
-    sys.exit(app.exec())
+
+app = QtWidgets.QApplication.instance()
+if app is None:
+    app = QtWidgets.QApplication(sys.argv)
+
+window = InventarioWindow()
+window.show()
+sys.exit(app.exec())

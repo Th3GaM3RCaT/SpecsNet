@@ -5,20 +5,28 @@ from logica.logica_Hilo import Hilo
 
 modo_tarea = "--tarea" in sys.argv
 
-def escuchar_broadcast(port=37020, on_message=None):
+def escuchar_broadcast(port=None, on_message=None):
     """Escucha broadcasts UDP en el puerto especificado.
     
     Args:
-        port (int): Puerto UDP donde escuchar broadcasts
+        port (int): Puerto UDP donde escuchar broadcasts. Si es None, usa valor del .env
         on_message (callable): Callback que recibe (mensaje, direccion) cuando llega broadcast
     
     Note:
         Ejecuta en loop infinito hasta Ctrl+C. Ideal para modo daemon.
     """
+    # Cargar puerto desde .env si no se especifica
+    if port is None:
+        try:
+            from config.security_config import DISCOVERY_PORT
+            port = DISCOVERY_PORT
+        except ImportError:
+            port = 37020  # Fallback
+    
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('', port))
-    print(f"Ô£ô Escuchando broadcasts en puerto {port}...")
+    print(f"🔊 Escuchando broadcasts en puerto {port}...")
 
     try:
         while True:
@@ -99,10 +107,10 @@ if modo_tarea:
                 traceback.print_exc()
                 print(f"{'='*70}\n")
     
-    # Ejecutar escucha con callback
-    escuchar_broadcast(port=37020, on_message=manejar_broadcast)
+    # Ejecutar escucha con callback (puerto desde .env)
+    escuchar_broadcast(on_message=manejar_broadcast)
 else:
-    # Modo GUI: interfaz gr├ífica
+    # Modo GUI: interfaz gráfica
     from sys import argv
     from json import dump
     from PySide6.QtCore import Qt
@@ -167,18 +175,22 @@ else:
             self.send_button.setEnabled(True)
 
         def enviar(self):
-            """Env├¡a especificaciones al servidor."""
+            """Envía especificaciones al servidor."""
             self.send_button.setEnabled(False)
             with open("salida.json", "w", encoding="utf-8") as f:
                 dump(lsp.new, f, indent=4)
             self.hilo_enviar = Hilo(lsp.enviar_a_servidor)
             self.hilo_enviar.start()
 
-
-    if __name__ == "__main__":
+    def main():
+        """Función principal para ejecutar la GUI."""
         if "--task" in argv:
             print("modo tarea")
         else:
             window = MainWindow()
             window.show()
             sys.exit(app.exec())
+    
+    # Ejecutar solo si es el script principal
+    if __name__ == "__main__":
+        main()

@@ -6,11 +6,10 @@ from threading import Thread
 from datetime import datetime
 import csv
 import re
-import asyncio
 
 from PySide6.QtWidgets import QApplication
-from .logica_Hilo import Hilo
-from ..sql import consultas_sql as sql
+from logica.logica_Hilo import Hilo
+from sql import consultas_sql as sql
 
 # Importar configuración de seguridad
 from typing import Callable, Optional
@@ -52,7 +51,12 @@ except ImportError:
 
 import socket as sckt
 HOST = sckt.gethostbyname(sckt.gethostname())
-PORT = 5255
+# Puerto TCP del servidor (cargar desde .env)
+try:
+    from config.security_config import SERVER_PORT
+    PORT = SERVER_PORT
+except ImportError:
+    PORT = 5255  # Fallback si no hay security_config
 
 app = QApplication.instance()
 if app is None:
@@ -456,28 +460,44 @@ def anunciar_ip():
         Usado internamente por anunciar_ip_periodico() para envío repetido.
     """
     global clientes
+    # Puerto de discovery (cargar desde .env)
+    try:
+        from config.security_config import DISCOVERY_PORT
+        discovery_port = DISCOVERY_PORT
+    except ImportError:
+        discovery_port = 37020  # Fallback
+    
     broadcast = socket(AF_INET, SOCK_DGRAM)
     broadcast.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
     try:
-        broadcast.sendto(b"servidor specs", ("255.255.255.255", 37020))
-        print(f"📡 Broadcast enviado a 255.255.255.255:37020")
+        broadcast.sendto(b"servidor specs", ("255.255.255.255", discovery_port))
+        print(f"📡 Broadcast enviado a 255.255.255.255:{discovery_port}")
     except Exception as e:
         print(f"❌ Error enviando broadcast: {e}")
     finally:
         broadcast.close()
 
 
-def anunciar_ip_periodico(intervalo=10):
+def anunciar_ip_periodico(intervalo=None):
     """Anuncia la IP del servidor periódicamente mediante broadcasts UDP.
     
     Args:
-        intervalo (int): Segundos entre cada anuncio (default: 10)
+        intervalo (int): Segundos entre cada anuncio. Si es None, usa valor del .env
     
     Note:
         Ejecuta en loop infinito. Debe correrse en thread separado.
         Permite que clientes nuevos detecten el servidor en cualquier momento.
     """
     import time
+    
+    # Cargar intervalo desde .env si no se especifica
+    if intervalo is None:
+        try:
+            from config.security_config import BROADCAST_INTERVAL
+            intervalo = BROADCAST_INTERVAL
+        except ImportError:
+            intervalo = 10  # Fallback
+    
     print(f"🔄 Iniciando anuncios periódicos cada {intervalo} segundos...")
     
     contador = 0
@@ -710,9 +730,15 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
         for idx, (ip, mac) in enumerate(ips_macs, 1):
             tareas.append(ping_y_actualizar_dispositivo(ip, mac, idx))
         
-        # Ejecutar en lotes de 50 para no saturar la red
+        # Cargar batch_size desde .env
+        try:
+            from config.security_config import PING_BATCH_SIZE
+            batch_size = PING_BATCH_SIZE
+        except ImportError:
+            batch_size = 50  # Fallback
+        
+        # Ejecutar en lotes para no saturar la red
         resultados = []
-        batch_size = 50
         for i in range(0, len(tareas), batch_size):
             batch = tareas[i:i+batch_size]
             batch_num = i//batch_size + 1

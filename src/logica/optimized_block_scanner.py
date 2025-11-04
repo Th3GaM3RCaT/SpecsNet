@@ -30,18 +30,34 @@ sys.path.insert(0, src_path)
 from datos.scan_ip_mac import update_csv_with_macs  # type: ignore[import]
 
 # ------------------ CONFIGURACIÓN OPTIMIZADA ------------------
+# Cargar configuración desde .env si está disponible
+try:
+    from config.security_config import (
+        SCAN_PER_HOST_TIMEOUT,
+        SCAN_PER_SUBNET_TIMEOUT,
+        SCAN_PROBE_TIMEOUT,
+        OUTPUT_DIR as ENV_OUTPUT_DIR
+    )
+    PER_HOST_TIMEOUT = SCAN_PER_HOST_TIMEOUT
+    PER_SUBNET_TIMEOUT = SCAN_PER_SUBNET_TIMEOUT
+    PROBE_TIMEOUT = SCAN_PROBE_TIMEOUT
+    output_dir_str = ENV_OUTPUT_DIR
+except ImportError:
+    # Fallbacks si no hay .env
+    PER_HOST_TIMEOUT = 0.8
+    PER_SUBNET_TIMEOUT = 8.0
+    PROBE_TIMEOUT = 0.9
+    output_dir_str = "output"
+
 START_SEGMENT = 100
 END_SEGMENT = 119
 CHUNK_SIZE = 255
-PER_HOST_TIMEOUT = 0.8
-PER_SUBNET_TIMEOUT = 8.0
 CONCURRENCY = 300
-PROBE_TIMEOUT = 0.9
 MAX_PARALLEL_SEGMENTS = 10
 USE_BROADCAST_PROBE = True
 
 # Directorio para archivos de salida
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR = Path(__file__).parent.parent / output_dir_str
 OUTPUT_DIR.mkdir(exist_ok=True)
 CSV_FILENAME = OUTPUT_DIR / "discovered_devices.csv"
 
@@ -506,8 +522,14 @@ async def force_arp_population(ips):
         except Exception:
             pass
     
+    # Cargar batch_size desde .env
+    try:
+        from config.security_config import PING_BATCH_SIZE
+        batch_size = PING_BATCH_SIZE
+    except ImportError:
+        batch_size = 50  # Fallback
+    
     # Hacer ping en lotes para no saturar
-    batch_size = 50
     for i in range(0, len(ips), batch_size):
         batch = ips[i:i+batch_size]
         await asyncio.gather(*[ping_single(ip) for ip in batch], return_exceptions=True)

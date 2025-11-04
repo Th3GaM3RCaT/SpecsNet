@@ -216,15 +216,22 @@ def enviar_a_servidor():
         security_available = False
         print("⚠️  WARNING: security_config no disponible, enviando sin autenticación")
     
-    DISCOVERY_PORT = 37020  # Puerto para escuchar broadcasts del servidor
-    TCP_PORT = 5255         # Puerto TCP del servidor para enviar datos
+    # Cargar puertos desde .env
+    try:
+        from config.security_config import DISCOVERY_PORT, SERVER_PORT
+        discovery_port = DISCOVERY_PORT
+        tcp_port = SERVER_PORT
+    except ImportError:
+        discovery_port = 37020  # Fallback puerto UDP discovery
+        tcp_port = 5255         # Fallback puerto TCP servidor
+    
     txt_data = ""
 
-    # Escuchar broadcasts en puerto 37020
+    # Escuchar broadcasts en puerto de discovery
     s = socket(AF_INET, SOCK_DGRAM)
     s.settimeout(5)
-    s.bind(("", DISCOVERY_PORT))
-    print(f"🔍 Buscando servidor (escuchando broadcasts en puerto {DISCOVERY_PORT})...")
+    s.bind(("", discovery_port))
+    print(f"🔍 Buscando servidor (escuchando broadcasts en puerto {discovery_port})...")
     
 
     try:
@@ -252,7 +259,7 @@ def enviar_a_servidor():
         try:
             # Obtener IP local conectando al servidor
             temp_sock = socket(AF_INET, SOCK_DGRAM)
-            temp_sock.connect((HOST, TCP_PORT))
+            temp_sock.connect((HOST, tcp_port))
             new["client_ip"] = temp_sock.getsockname()[0]
             temp_sock.close()
         except:
@@ -269,9 +276,9 @@ def enviar_a_servidor():
                 return  # No enviar sin autenticación si está habilitada
         
         # Conectar vía TCP y enviar todo
-        print(f"🔌 Conectando al servidor {HOST}:{TCP_PORT}...")
+        print(f"🔌 Conectando al servidor {HOST}:{tcp_port}...")
         cliente = socket(AF_INET, SOCK_STREAM)
-        cliente.connect((HOST, TCP_PORT))
+        cliente.connect((HOST, tcp_port))
         cliente.sendall(dumps(new).encode("utf-8"))
         cliente.close()
         print("✓ Datos enviados correctamente al servidor")

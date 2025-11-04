@@ -12,5 +12,8 @@ windows-tools>=0.7.0
 # Network
 getmac>=0.9.0
 
+# Security & Configuration
+python-dotenv>=1.0.0
+
 # Utilities
 python-dateutil>=2.8.0

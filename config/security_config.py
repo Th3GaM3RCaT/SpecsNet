@@ -8,45 +8,57 @@ NO compartir en repositorios públicos. Agregar a .gitignore.
 import secrets
 import hashlib
 import ipaddress
+import os
+from pathlib import Path
 from typing import List
 
+# Cargar variables de entorno desde .env
+try:
+    from dotenv import load_dotenv
+    
+    # Buscar .env en la raíz del proyecto (dos niveles arriba de config/)
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✓ Configuración cargada desde {env_path}")
+    else:
+        print(f"⚠️  Archivo .env no encontrado en {env_path}")
+except ImportError:
+    print("⚠️  python-dotenv no instalado. Ejecutar: pip install python-dotenv")
+    print("    Usando valores por defecto (INSEGURO)")
+
 # Token compartido para autenticación cliente-servidor
-# Generar nuevo token: python -c "import secrets; print(secrets.token_hex(32))"
-SHARED_SECRET = "CHANGE_ME_TO_RANDOM_TOKEN"  # ⚠️ CAMBIAR EN PRODUCCIÓN
+SHARED_SECRET = os.getenv("SHARED_SECRET", "CHANGE_ME_TO_RANDOM_TOKEN")
 
 # Redes permitidas (whitelist de subnets)
-ALLOWED_SUBNETS = [
-    "10.100.0.0/16",
-    "10.101.0.0/16",
-    "10.102.0.0/16",
-    "10.103.0.0/16",
-    "10.104.0.0/16",
-    "10.105.0.0/16",
-    "10.106.0.0/16",
-    "10.107.0.0/16",
-    "10.108.0.0/16",
-    "10.109.0.0/16",
-    "10.110.0.0/16",
-    "10.111.0.0/16",
-    "10.112.0.0/16",
-    "10.113.0.0/16",
-    "10.114.0.0/16",
-    "10.115.0.0/16",
-    "10.116.0.0/16",
-    "10.117.0.0/16",
-    "10.118.0.0/16",
-    "10.119.0.0/16",
-    "127.0.0.1/32",  # localhost para testing
-]
+# Cargar desde .env (formato: "subnet1,subnet2,subnet3")
+subnets_str = os.getenv("ALLOWED_SUBNETS", "127.0.0.1/32")
+ALLOWED_SUBNETS = [subnet.strip() for subnet in subnets_str.split(",")]
 
-# Límites de seguridad
-MAX_BUFFER_SIZE = 10 * 1024 * 1024  # 10 MB
+# Límites de seguridad (cargar desde .env con fallbacks)
+MAX_BUFFER_SIZE = int(os.getenv("MAX_BUFFER_SIZE", "10485760"))  # 10 MB por defecto
 MAX_JSON_DEPTH = 20  # Profundidad máxima de JSON anidado
-CONNECTION_TIMEOUT = 30  # segundos
-MAX_CONNECTIONS_PER_IP = 3  # Máximo de conexiones simultáneas por IP
+CONNECTION_TIMEOUT = int(os.getenv("CONNECTION_TIMEOUT", "30"))  # segundos
+MAX_CONNECTIONS_PER_IP = int(os.getenv("MAX_CONNECTIONS_PER_IP", "3"))  # Conexiones simultáneas por IP
+MAX_FIELD_LENGTH = int(os.getenv("MAX_FIELD_LENGTH", "1024"))  # Caracteres máximos por campo
 
-# Límites de campo para prevenir DoS
-MAX_FIELD_LENGTH = 1024  # Caracteres máximos por campo de texto
+# Puertos de red
+SERVER_PORT = int(os.getenv("SERVER_PORT", "5255"))  # Puerto TCP del servidor
+DISCOVERY_PORT = int(os.getenv("DISCOVERY_PORT", "37020"))  # Puerto UDP para discovery
+BROADCAST_INTERVAL = int(os.getenv("BROADCAST_INTERVAL", "10"))  # Segundos entre broadcasts
+
+# Rutas de archivos
+DB_PATH = os.getenv("DB_PATH", "data/specs.db")  # Ruta de base de datos SQLite
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "output")  # Directorio de salida
+
+# Configuración de escaneo
+SCAN_SUBNET_START = os.getenv("SCAN_SUBNET_START", "10.100.0.0")
+SCAN_SUBNET_END = os.getenv("SCAN_SUBNET_END", "10.119.0.0")
+PING_TIMEOUT = float(os.getenv("PING_TIMEOUT", "1.0"))
+SCAN_PER_HOST_TIMEOUT = float(os.getenv("SCAN_PER_HOST_TIMEOUT", "0.8"))
+SCAN_PER_SUBNET_TIMEOUT = float(os.getenv("SCAN_PER_SUBNET_TIMEOUT", "8.0"))
+SCAN_PROBE_TIMEOUT = float(os.getenv("SCAN_PROBE_TIMEOUT", "0.9"))
+PING_BATCH_SIZE = int(os.getenv("PING_BATCH_SIZE", "50"))
 
 
 def generate_auth_token(secret: str | None = None) -> str:
