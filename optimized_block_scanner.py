@@ -24,7 +24,7 @@ from itertools import islice
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'datos'))
-from datos.get_mac import update_csv_with_macs
+from datos.scan_ip_mac import update_csv_with_macs
 
 # ------------------ CONFIGURACIÓN OPTIMIZADA ------------------
 START_SEGMENT = 100
