@@ -19,11 +19,10 @@ PORT = 5255
 app = QApplication.instance()
 if app is None:
     app = QApplication(argv)
-    
-    
-    
-# tengo un array de archivos json y tengo que migrarlo a la DB cambiando consultar_informacion y abrir_json para que usen la DB en vez de los archivos
+
+# Almacenamiento de archivos JSON legacy (deprecado, SQLite es fuente de verdad)
 archivos_json = glob("*.json")
+# Lista de conexiones activas de clientes
 clientes = []
 
 

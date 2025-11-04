@@ -5,10 +5,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import time
 
-import time
-
-# Inicio del contador lo más arriba posible
-start_time = time.time()
 # Reutiliza tu parse_arp_table_raw() existente (debe estar en el mismo módulo)
 # Si no está en el mismo archivo, impórtala: from myscanner import parse_arp_table_raw
 from scan_ip_mac import parse_arp_table_raw
@@ -186,8 +182,10 @@ def update_csv_with_macs(input_csv_path,
         "mac_missing": still_missing
     }
 
-update_csv_with_macs("optimized_scan_20251029_125612.csv")
-
-# Fin del contador al final del script
-end_time = time.time()
-print(f"Tiempo total de ejecución: {end_time - start_time:.6f} segundos")
+# Ejemplo de uso (comentado para no ejecutar al importar):
+# if __name__ == "__main__":
+#     import time
+#     start_time = time.time()
+#     result = update_csv_with_macs("historial ips.csv")
+#     end_time = time.time()
+#     print(f"Tiempo total de ejecución: {end_time - start_time:.6f} segundos")

@@ -92,64 +92,86 @@ def abrir_consulta(
 
     return statements, params
 
-
-def setaplication(aplicacion = tuple()):
-    #consultar si existe por nombre y publisher, de ser asi reemplazar por version
-    sql, params = abrir_consulta("aplicaciones-select.sql",{"name":aplicacion[1],"publisher":aplicacion[3]})
-    cursor.execute(sql,params)
-    data = aplicacion
+def setaplication(aplicacion=tuple()):
+    """
+    Inserta o actualiza una aplicación en la BD.
+    
+    Args:
+        aplicacion: (Dispositivos_serial, name, version, publisher)
+    """
+    sql, params = abrir_consulta("aplicaciones-select.sql", {"name": aplicacion[1], "publisher": aplicacion[3]})
+    cursor.execute(sql, params)
+    
     if cursor.fetchone():
+        # Actualizar versión si ya existe
         cursor.execute("""UPDATE aplicaciones 
                        SET version = ?
                        WHERE name = ? AND publisher = ?""",
-                       (data[2],data[1],data[3]))
-        return
-    # Schema: Dispositivos_serial, name, version, publisher, id (AUTOINCREMENT)
-    cursor.execute("""INSERT INTO aplicaciones 
-                   (Dispositivos_serial, name, version, publisher)
-                   VALUES (?,?,?,?)""",
-                   (data[0],data[1],data[2],data[3]))    
+                       (aplicacion[2], aplicacion[1], aplicacion[3]))
+    else:
+        # Insertar nueva aplicación
+        cursor.execute("""INSERT INTO aplicaciones 
+                       (Dispositivos_serial, name, version, publisher)
+                       VALUES (?,?,?,?)""",
+                       (aplicacion[0], aplicacion[1], aplicacion[2], aplicacion[3]))
 
 
-
-def setAlmacenamiento(almacenamiento = tuple(), indice = 1):
-    data = almacenamiento
-    #consultar si existe por nombre y capacidad, de ser asi return
-    sql, params = abrir_consulta("almacenamiento-select.sql", {"nombre": data[1], "capacidad": data[2]})
+def setAlmacenamiento(almacenamiento=tuple(), indice=1):
+    """
+    Inserta información de almacenamiento en la BD.
+    
+    Args:
+        almacenamiento: (Dispositivos_serial, nombre, capacidad, tipo, actual, fecha_instalacion)
+        indice: Si es 1, marca otros discos del dispositivo como no actuales
+    """
+    # Verificar si ya existe
+    sql, params = abrir_consulta("almacenamiento-select.sql", {"nombre": almacenamiento[1], "capacidad": almacenamiento[2]})
     cursor.execute(sql, params)
     if cursor.fetchone():
-        return
-    #si indice es 1, cambiar el valor actual a false donde serial coincida
+        return  # Ya existe, no duplicar
+    
+    # Si es el primer disco, marcar otros como no actuales
     if indice <= 1:
         cursor.execute("""UPDATE almacenamiento 
                        SET actual = ?
                        WHERE Dispositivos_serial = ?""",
-                       (False,data[0]))
-    # Schema: Dispositivos_serial, nombre, capacidad, tipo, actual, id (AUTOINCREMENT), fecha_instalacion
+                       (False, almacenamiento[0]))
+    
+    # Insertar nuevo almacenamiento
     cursor.execute("""INSERT INTO almacenamiento 
                    (Dispositivos_serial, nombre, capacidad, tipo, actual, fecha_instalacion)
                    VALUES (?,?,?,?,?,?)""",
-                   (data[0],data[1],data[2],data[3],data[4],data[5]))
+                   (almacenamiento[0], almacenamiento[1], almacenamiento[2], 
+                    almacenamiento[3], almacenamiento[4], almacenamiento[5]))
 
 
-def setMemoria(memoria = tuple(), indice = 1):
-    data = memoria
-    #consultar si existe por numero_serie, de ser asi return
-    sql, params = abrir_consulta("memoria-select.sql", {"numero_serie": data[5]})
+def setMemoria(memoria=tuple(), indice=1):
+    """
+    Inserta información de módulo RAM en la BD.
+    
+    Args:
+        memoria: (Dispositivos_serial, modulo, fabricante, capacidad, velocidad, numero_serie, actual, fecha_instalacion)
+        indice: Si es 1, marca otros módulos del dispositivo como no actuales
+    """
+    # Verificar si ya existe por número de serie
+    sql, params = abrir_consulta("memoria-select.sql", {"numero_serie": memoria[5]})
     cursor.execute(sql, params)
     if cursor.fetchone():
-        return
-    #si indice es 1, cambiar el valor actual a false donde serial coincida
+        return  # Ya existe, no duplicar
+    
+    # Si es el primer módulo, marcar otros como no actuales
     if indice <= 1:
         cursor.execute("""UPDATE memoria 
                        SET actual = ?
                        WHERE Dispositivos_serial = ?""",
-                       (False,data[0]))
-    # Schema: Dispositivos_serial, modulo, fabricante, capacidad, velocidad, numero_serie, actual, id (AUTOINCREMENT), fecha_instalacion
+                       (False, memoria[0]))
+    
+    # Insertar nuevo módulo de memoria
     cursor.execute("""INSERT INTO memoria 
                    (Dispositivos_serial, modulo, fabricante, capacidad, velocidad, numero_serie, actual, fecha_instalacion)
                    VALUES (?,?,?,?,?,?,?,?)""",
-                   (data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]))
+                   (memoria[0], memoria[1], memoria[2], memoria[3], 
+                    memoria[4], memoria[5], memoria[6], memoria[7]))
     
 
 
@@ -159,24 +181,53 @@ def setMemoria(memoria = tuple(), indice = 1):
 
 
 def setInformeDiagnostico(informes = tuple()):
-    data = informes
-    # Schema: Dispositivos_serial, json_diagnostico, reporteDirectX, fecha, id (AUTOINCREMENT)
+    """Inserta información de diagnóstico de dispositivo en la base de datos.
+    
+    Args:
+        informes (tuple): Tupla con (serial_dispositivo, json_diagnostico, reporteDirectX, fecha)
+                         Schema: Dispositivos_serial, json_diagnostico, reporteDirectX, fecha, id (AUTOINCREMENT)
+    
+    Returns:
+        None
+    """
     cursor.execute("""INSERT INTO informacion_diagnostico 
                    (Dispositivos_serial, json_diagnostico, reporteDirectX, fecha)
                    VALUES (?,?,?,?)""",
-                   (data[0],data[1],data[2],data[3]))#listo
+                   (informes[0], informes[1], informes[2], informes[3]))
     
 def setResgistro_cambios(registro = tuple()):
-    data = registro
-    # Schema: Dispositivos_serial, user, processor, GPU, RAM, disk, license_status, ip, date, id (AUTOINCREMENT)
+    """Registra cambios de especificaciones de hardware/software de un dispositivo.
+    
+    Args:
+        registro (tuple): Tupla con (serial_dispositivo, user, processor, GPU, RAM, disk, 
+                         license_status, ip, date)
+                         Schema: Dispositivos_serial, user, processor, GPU, RAM, disk, 
+                         license_status, ip, date, id (AUTOINCREMENT)
+    
+    Returns:
+        None
+    """
     cursor.execute("""INSERT INTO registro_cambios 
                    (Dispositivos_serial, user, processor, GPU, RAM, disk, license_status, ip, date)
                    VALUES (?,?,?,?,?,?,?,?,?)""",
-                   (data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7],data[8]))#listo
+                   (registro[0], registro[1], registro[2], registro[3], registro[4], 
+                    registro[5], registro[6], registro[7], registro[8]))
 
 def setDevice(info_dispositivo = tuple()):
-    data = info_dispositivo
-    # Schema: serial, DTI, user, MAC, model, processor, GPU, RAM, disk, license_status, ip, activo
+    """Inserta o actualiza información completa de un dispositivo usando UPSERT.
+    
+    Args:
+        info_dispositivo (tuple): Tupla con (serial, DTI, user, MAC, model, processor, 
+                                  GPU, RAM, disk, license_status, ip, activo)
+                                  Schema completo de tabla Dispositivos (12 campos)
+    
+    Returns:
+        None
+    
+    Note:
+        Usa ON CONFLICT para actualizar si el serial ya existe. Este es el único caso
+        donde UPSERT está justificado por la complejidad de los 12 campos a actualizar.
+    """
     cursor.execute("""INSERT INTO Dispositivos 
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(serial) DO UPDATE SET
@@ -191,16 +242,30 @@ def setDevice(info_dispositivo = tuple()):
                        license_status = excluded.license_status,
                        ip = excluded.ip,
                        activo = excluded.activo""",(
-            data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7],data[8],data[9],data[10],data[11]
-    ))#listo
+            info_dispositivo[0], info_dispositivo[1], info_dispositivo[2], info_dispositivo[3],
+            info_dispositivo[4], info_dispositivo[5], info_dispositivo[6], info_dispositivo[7],
+            info_dispositivo[8], info_dispositivo[9], info_dispositivo[10], info_dispositivo[11]
+    ))
 
 def setActive(dispositivoEstado = tuple()):
-    data = dispositivoEstado
-    # Schema: Dispositivos_serial, powerOn, date (sin id porque no tiene PRIMARY KEY AUTOINCREMENT)
+    """Inserta estado de actividad de un dispositivo (encendido/apagado).
+    
+    Args:
+        dispositivoEstado (tuple): Tupla con (serial_dispositivo, powerOn, date)
+                                  Schema: Dispositivos_serial, powerOn, date 
+                                  (sin id porque no tiene PRIMARY KEY AUTOINCREMENT)
+    
+    Returns:
+        None
+    
+    Warning:
+        SIEMPRE usar DELETE antes de INSERT para evitar duplicados (1 registro por dispositivo).
+        Ver logica_servidor.py para implementación correcta.
+    """
     cursor.execute("""INSERT INTO activo 
                    VALUES (?,?,?)""", (
-                       data[0],data[1],data[2]
-                       ))#listo
+                       dispositivoEstado[0], dispositivoEstado[1], dispositivoEstado[2]
+                       ))
 
 
 def set_dispositivo_inicial(ip, mac):

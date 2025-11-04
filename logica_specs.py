@@ -10,15 +10,13 @@ import sys
 
 import psutil
 from getmac import get_mac_address as gma
-from PySide6.QtWidgets import QPushButton
 from windows_tools.installed_software import get_installed_software
 from wmi import WMI
 
-nombre_tarea = "informe_de_dispositivo"
-run_button = QPushButton()
-send_button = QPushButton()
-new = {}
-hilo = None
+# Constantes globales justificadas
+nombre_tarea = "informe_de_dispositivo"  # Usado por configurar_tarea()
+new = {}  # Diccionario compartido para datos del sistema (patrón establecido)
+
 
 def get_size(bytes, suffix="B"):
     factor = 1024
@@ -28,8 +26,23 @@ def get_size(bytes, suffix="B"):
         bytes /= factor
 
 def informe():
-
-    run_button.setEnabled(False)
+    """Recopila especificaciones completas del sistema (hardware/software).
+    
+    Recolecta información de:
+    - Fabricante, modelo, serial, MAC
+    - CPU (cores, frecuencias, uso)
+    - RAM (módulos individuales, capacidad)
+    - Discos (particiones, uso)
+    - Red (interfaces, IPs, MACs)
+    - Licencia Windows (estado, expiración)
+    - Software instalado (nombre, versión, publisher)
+    
+    Returns:
+        dict: Diccionario con todas las especificaciones (almacenado en global `new`)
+    
+    Note:
+        Modifica el diccionario global `new`. UI debe deshabilitar botón antes de llamar.
+    """
     my_system = WMI().Win32_ComputerSystem()[0]
 
     from datos.serialNumber import get_serial
@@ -124,6 +137,18 @@ def informe():
 
 
 def get_license_status(a=0):
+    """Obtiene estado o fecha de expiración de licencia Windows via slmgr.vbs.
+    
+    Args:
+        a (int): 0 para estado de licencia, 1 para fecha de expiración
+    
+    Returns:
+        str: Estado o fecha de licencia, o None si no se encuentra
+    
+    Raises:
+        OSError: Si no se ejecuta en Windows NT
+        FileNotFoundError: Si no se encuentra slmgr.vbs
+    """
     if name != "nt":
         raise OSError("solo en windows nt")
     type = r""
@@ -150,6 +175,25 @@ def get_license_status(a=0):
         return None
 
 def enviar_a_servidor():
+    """Descubre servidor vía UDP broadcast y envía especificaciones vía TCP.
+    
+    Proceso:
+    1. Escucha broadcasts UDP en puerto 5255 (5 sec timeout)
+    2. Extrae IP del servidor desde el sender
+    3. Guarda info del servidor en servidor.json
+    4. Lee dxdiag_output.txt y lo incluye en el JSON
+    5. Detecta IP local del cliente
+    6. Envía JSON completo vía TCP al servidor puerto 5255
+    
+    Returns:
+        None
+    
+    Raises:
+        timeout: Si no se encuentra servidor en 5 segundos
+    
+    Note:
+        Modifica el diccionario global `new` agregando dxdiag_output_txt y client_ip.
+    """
     PORT = 5255
     txt_data = ""
     s = socket(AF_INET, SOCK_DGRAM)
@@ -195,6 +239,18 @@ def enviar_a_servidor():
 
 
 def configurar_tarea(valor=1):
+    """Configura auto-start de specs.py en registro de Windows.
+    
+    Args:
+        valor (int): 0=agregar tarea, 1=consultar tarea, 2=eliminar tarea
+    
+    Returns:
+        None
+    
+    Note:
+        Usa registro HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run
+        para ejecutar specs.py --tarea al iniciar Windows.
+    """
     accion = ["add", "query", "delete"]
     modo = '\\"C:\\Python39\\python.exe\\" '
     if getattr(sys, "frozen", False):

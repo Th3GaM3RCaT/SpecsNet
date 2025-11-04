@@ -20,6 +20,12 @@ import select
 import os
 from itertools import islice
 
+# Importar función de población de MACs
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'datos'))
+from datos.get_mac import update_csv_with_macs
+
 # ------------------ CONFIGURACIÓN OPTIMIZADA ------------------
 START_SEGMENT = 100
 END_SEGMENT = 119
@@ -596,53 +602,6 @@ def is_computer_mac(mac):
     # (esto incluirá PCs genéricas/clones con NICs no identificados)
     return True
 
-def merge_with_arp(alive_ips):
-    """Hace ping a todas las IPs y luego extrae MACs de la tabla ARP, filtrando solo dispositivos de red conocidos."""
-    print(f"\n>> Poblando tabla ARP para {len(alive_ips)} IPs...")
-    
-    # Forzar población de tabla ARP
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(force_arp_population(alive_ips))
-        loop.close()
-    except Exception as e:
-        print(f"  [!] Error poblando ARP: {e}")
-    
-    # Ahora sí parsear la tabla ARP
-    arp = parse_arp_table()
-    arp_map = dict(arp)
-    out = []
-    macs_found = 0
-    filtered_out = 0
-    sin_mac = 0
-    
-    for ip in sorted(alive_ips, key=lambda s: tuple(int(x) for x in s.split("."))):
-        mac = arp_map.get(ip)
-        
-        if mac:
-            macs_found += 1
-            # Si tiene MAC, verificar que NO sea un dispositivo de red
-            if is_computer_mac(mac):
-                # Es computadora o desconocido (incluir)
-                out.append((ip, mac))
-            else:
-                # Es switch/router/AP conocido (descartar)
-                filtered_out += 1
-                print(f"  [X] Filtrado {ip} ({mac[:8]}...) - Equipo de red conocido")
-        else:
-            # No tiene MAC en tabla ARP (probablemente en otra subred)
-            # INCLUIR de todas formas - la MAC se obtendrá después del JSON
-            sin_mac += 1
-            out.append((ip, None))
-    
-    print(f">> MACs obtenidas: {macs_found}/{len(alive_ips)}")
-    print(f">> Dispositivos incluidos: {len(out)}")
-    print(f"   - Con MAC de computadora: {len(out) - sin_mac}")
-    print(f"   - Sin MAC (otras subredes): {sin_mac}")
-    print(f"   - Equipos de red descartados: {filtered_out}")
-    return out
-
 def parse_arp_table_raw_fallback():
     """Parsea la tabla ARP del sistema para obtener IP→MAC."""
     entries = []
@@ -706,12 +665,11 @@ def main():
     if alive:
         print(f"   Ejemplos: {alive[:10]}")
     
-    newly_scanned = merge_with_arp(alive)
-
-    # --- Guardar en CSV (PRESERVAR IPs antiguas + agregar nuevas) ---
-    existing_devices = {}
-
+    # --- Guardar IPs descubiertas en CSV temporal (sin MACs todavía) ---
+    temp_csv = "temp_scan.csv"
+    
     # 1. Leer dispositivos existentes del CSV (preservar lista histórica)
+    existing_devices = {}
     if os.path.exists(CSV_FILENAME):
         try:
             with open(CSV_FILENAME, "r", newline="", encoding="utf-8") as f:
@@ -720,35 +678,53 @@ def main():
                 if header == ['ip', 'mac']:
                     for row in reader:
                         if len(row) == 2:
-                            existing_devices[row[0]] = row[1] if row[1] else None
+                            existing_devices[row[0]] = row[1] if row[1] else ""
         except Exception as e:
             print(f"Advertencia: No se pudo leer CSV existente: {e}")
 
-    # 2. Actualizar/agregar dispositivos del escaneo actual
-    for ip, mac in newly_scanned:
-        existing_devices[ip] = mac  # Actualizar MAC si la obtuvimos, o None
+    # 2. Agregar nuevas IPs del escaneo (sin MAC todavía)
+    for ip in alive:
+        if ip not in existing_devices:
+            existing_devices[ip] = ""
 
     # 3. Ordenar por IP (numéricamente)
     sorted_devices = sorted(existing_devices.items(), 
                            key=lambda item: tuple(map(int, item[0].split('.'))))
 
-    # 4. Escribir archivo actualizado
-    with open(CSV_FILENAME, "w", newline="", encoding="utf-8") as f:
+    # 4. Escribir CSV temporal con todas las IPs
+    with open(temp_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["ip", "mac"])
         for ip, mac in sorted_devices:
-            writer.writerow([ip, mac or ""])
+            writer.writerow([ip, mac])
     
-    # 5. Estadísticas
-    with_mac = sum(1 for ip, mac in sorted_devices if mac)
-    without_mac = len(sorted_devices) - with_mac
-    nuevas = len([ip for ip in newly_scanned if ip[0] not in existing_devices or not existing_devices.get(ip[0])])
+    print(f"\n>> Poblando MACs con get_mac.py (rápido: ~3.6s)...")
     
-    print(f"CSV actualizado: '{CSV_FILENAME}'")
-    print(f"   - Total dispositivos: {len(sorted_devices)}")
-    print(f"   - Con MAC: {with_mac}")
-    print(f"   - Sin MAC: {without_mac}")
-    print(f"   - Encontradas en este escaneo: {len(newly_scanned)}")
-    print(f"   - Preservadas de CSV anterior: {len(sorted_devices) - len(newly_scanned)}")
+    # 5. Usar update_csv_with_macs para poblar MACs eficientemente
+    try:
+        result = update_csv_with_macs(
+            input_csv_path=temp_csv,
+            output_csv_path=CSV_FILENAME,
+            ping_missing=True,
+            ping_timeout=0.8,
+            workers=50,
+            overwrite=False
+        )
+        
+        print(f"✓ CSV actualizado: '{CSV_FILENAME}'")
+        print(f"   - Total dispositivos: {result['total_rows']}")
+        print(f"   - MACs encontradas: {result['mac_found']}")
+        print(f"   - Sin MAC: {result['mac_missing']}")
+        print(f"   - Nuevas IPs en este escaneo: {len(alive)}")
+        
+    except Exception as e:
+        print(f"Error poblando MACs: {e}")
+        # Fallback: copiar temp_csv como resultado
+        import shutil
+        shutil.copy(temp_csv, CSV_FILENAME)
+    finally:
+        # Limpiar archivo temporal
+        if os.path.exists(temp_csv):
+            os.remove(temp_csv)
 
 
