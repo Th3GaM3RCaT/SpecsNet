@@ -50,7 +50,10 @@ except ImportError:
         return str(value)[:max_length] if value else ""
 
 import socket as sckt
-HOST = sckt.gethostbyname(sckt.gethostname())
+# Obtener IP local
+LOCAL_IP = sckt.gethostbyname(sckt.gethostname())
+# Servidor escucha en la IP local (no en 0.0.0.0 para evitar problemas de firewall)
+HOST = LOCAL_IP
 # Puerto TCP del servidor (cargar desde .env)
 try:
     from config.security_config import SERVER_PORT
@@ -339,6 +342,70 @@ def consultar_informacion(conn, addr):
                 
                 # Parsear datos para tabla Dispositivos
                 datos_dispositivo = parsear_datos_dispositivo(json_data)
+                serial = datos_dispositivo[0]
+                mac = datos_dispositivo[3]
+                ip = datos_dispositivo[10]
+                
+                # Si el serial viene vacío del cliente, generar uno temporal basado en MAC
+                if not serial or serial.strip() == "":
+                    if mac:
+                        serial = f"TEMP_{mac.replace(':', '').replace('-', '')}"
+                        print(f"[WARN] Cliente sin serial, usando temporal: {serial}")
+                    else:
+                        serial = "TEMP_UNKNOWN"
+                        print("[WARN] Cliente sin serial ni MAC, usando TEMP_UNKNOWN")
+                    # Actualizar tupla con el serial temporal
+                    datos_dispositivo = (serial,) + datos_dispositivo[1:]
+                
+                # Si el serial NO es temporal y hay MAC, verificar si existe dispositivo para actualizar
+                elif not serial.startswith("TEMP"):
+                    dispositivo_existente = None
+                    
+                    # 1. Buscar por MAC si existe
+                    if mac:
+                        # Buscar serial temporal basado en MAC
+                        if sql.actualizar_serial_temporal(serial, mac):
+                            print(f"[OK] Serial temporal (por MAC) actualizado a {serial}")
+                            dispositivo_existente = serial
+                        else:
+                            # Buscar cualquier dispositivo con esa MAC
+                            sql.cursor.execute("SELECT serial FROM Dispositivos WHERE MAC = ?", (mac,))
+                            resultado = sql.cursor.fetchone()
+                            if resultado:
+                                dispositivo_existente = resultado[0]
+                                print(f"[INFO] Dispositivo encontrado por MAC: {dispositivo_existente}")
+                    
+                    # 2. Si no encontró por MAC, buscar por IP
+                    if not dispositivo_existente and ip:
+                        sql.cursor.execute("SELECT serial, MAC FROM Dispositivos WHERE ip = ?", (ip,))
+                        resultado = sql.cursor.fetchone()
+                        if resultado:
+                            serial_anterior = resultado[0]
+                            mac_anterior = resultado[1]
+                            
+                            # Si el dispositivo no tenía MAC, actualizarlo
+                            if not mac_anterior or mac_anterior.strip() == "":
+                                print(f"[UPDATE] Dispositivo encontrado por IP sin MAC: {serial_anterior}")
+                                print(f"[UPDATE] Actualizando de {serial_anterior} a {serial} y agregando MAC {mac}")
+                                
+                                # Actualizar serial en todas las tablas
+                                sql.cursor.execute("UPDATE Dispositivos SET serial = ? WHERE serial = ?", 
+                                             (serial, serial_anterior))
+                                sql.cursor.execute("UPDATE activo SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                                             (serial, serial_anterior))
+                                sql.cursor.execute("UPDATE registro_cambios SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                                             (serial, serial_anterior))
+                                sql.cursor.execute("UPDATE almacenamiento SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                                             (serial, serial_anterior))
+                                sql.cursor.execute("UPDATE memoria SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                                             (serial, serial_anterior))
+                                sql.cursor.execute("UPDATE aplicaciones SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                                             (serial, serial_anterior))
+                                sql.cursor.execute("UPDATE informacion_diagnostico SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                                             (serial, serial_anterior))
+                                sql.connection.commit()
+                                
+                                dispositivo_existente = serial
                 
                 # Insertar/actualizar dispositivo
                 sql.setDevice(datos_dispositivo)

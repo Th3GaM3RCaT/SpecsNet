@@ -51,65 +51,110 @@ def escuchar_broadcast(port=None, on_message=None):
 
 
 if modo_tarea:
-    # Modo tarea programada: escucha broadcasts y responde automáticamente
+    # Modo tarea programada: ejecuta inmediatamente o espera broadcasts según configuración
     print("=" * 70)
     print("[MODO TAREA] Activado")
     print("=" * 70)
-    print("Esperando solicitud del servidor...")
-    print("Presiona Ctrl+C para detener\n")
     
     from logica import logica_specs as lsp
     from datetime import datetime
+    from pathlib import Path
+    from json import load
     
-    # Cooldown para evitar m├║ltiples ejecuciones
-    ultima_ejecucion = 0
-    COOLDOWN_SEGUNDOS = 60  # Esperar 60 segundos entre ejecuciones
+    # Verificar modo de operación (manual vs discovery)
+    config_path = Path(__file__).parent.parent / "config" / "server_config.json"
+    use_discovery = True
     
-    def manejar_broadcast(mensaje, addr):
-        """Callback que se ejecuta al recibir broadcast del servidor."""
-        global ultima_ejecucion
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = load(f)
+                use_discovery = config.get("use_discovery", True)
+        except Exception as e:
+            print(f"[WARN] Error al leer configuracion: {e}")
+    
+    if not use_discovery:
+        # MODO MANUAL: Ejecutar inmediatamente sin esperar broadcasts
+        print("Modo configuracion manual detectado")
+        print("Ejecutando recopilacion inmediata...\n")
         
-        # Verificar si es el mensaje del servidor
-        if "servidor specs" in mensaje.lower():
-            servidor_ip = addr[0]
-            print(f"\n{'='*70}")
-            print(f"­ƒÄ» Servidor detectado en {servidor_ip}")
-            
-            # Verificar cooldown
-            tiempo_actual = time.time()
-            if tiempo_actual - ultima_ejecucion < COOLDOWN_SEGUNDOS:
-                tiempo_restante = int(COOLDOWN_SEGUNDOS - (tiempo_actual - ultima_ejecucion))
-                print(f"ÔÅ│ Cooldown activo. Esperar {tiempo_restante} segundos...")
-                print(f"{'='*70}\n")
-                return
-            
-            ultima_ejecucion = tiempo_actual
-            
+        try:
             print(f"[START] Iniciando recopilacion de especificaciones...")
             print(f"[TIME] Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            try:
-                # 1. Ejecutar informe (recopilar datos del sistema)
-                print("\n1) Recopilando datos del sistema...")
-                lsp.informe()
-                print("   [OK] Datos recopilados exitosamente")
+            # 1. Ejecutar informe (recopilar datos del sistema)
+            print("\n1) Recopilando datos del sistema...")
+            lsp.informe()
+            print("   [OK] Datos recopilados exitosamente")
+            
+            # 2. Enviar datos al servidor
+            print("\n2) Enviando datos al servidor...")
+            lsp.enviar_a_servidor()
+            print("   [OK] Datos enviados al servidor")
+            
+            print(f"\n[DONE] Proceso completado exitosamente")
+            print(f"{'='*70}\n")
+            
+        except Exception as e:
+            print(f"\n[ERROR] Error durante el proceso: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"{'='*70}\n")
+            sys.exit(1)
+    else:
+        # MODO DISCOVERY: Esperar broadcasts del servidor
+        print("Esperando solicitud del servidor...")
+        print("Presiona Ctrl+C para detener\n")
+        
+        # Cooldown para evitar multiples ejecuciones
+        ultima_ejecucion = 0
+        COOLDOWN_SEGUNDOS = 60  # Esperar 60 segundos entre ejecuciones
+        
+        def manejar_broadcast(mensaje, addr):
+            """Callback que se ejecuta al recibir broadcast del servidor."""
+            global ultima_ejecucion
+            
+            # Verificar si es el mensaje del servidor
+            if "servidor specs" in mensaje.lower():
+                servidor_ip = addr[0]
+                print(f"\n{'='*70}")
+                print(f"[DISCOVERY] Servidor detectado en {servidor_ip}")
                 
-                # 2. Enviar datos al servidor
-                print("\n2) Enviando datos al servidor...")
-                lsp.enviar_a_servidor()
-                print("   [OK] Datos enviados al servidor")
+                # Verificar cooldown
+                tiempo_actual = time.time()
+                if tiempo_actual - ultima_ejecucion < COOLDOWN_SEGUNDOS:
+                    tiempo_restante = int(COOLDOWN_SEGUNDOS - (tiempo_actual - ultima_ejecucion))
+                    print(f"[COOLDOWN] Esperar {tiempo_restante} segundos...")
+                    print(f"{'='*70}\n")
+                    return
                 
-                print(f"\n[DONE] Proceso completado exitosamente")
-                print(f"{'='*70}\n")
+                ultima_ejecucion = tiempo_actual
                 
-            except Exception as e:
-                print(f"\nÔØî Error durante el proceso: {e}")
-                import traceback
-                traceback.print_exc()
-                print(f"{'='*70}\n")
-    
-    # Ejecutar escucha con callback (puerto desde .env)
-    escuchar_broadcast(on_message=manejar_broadcast)
+                print(f"[START] Iniciando recopilacion de especificaciones...")
+                print(f"[TIME] Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                try:
+                    # 1. Ejecutar informe (recopilar datos del sistema)
+                    print("\n1) Recopilando datos del sistema...")
+                    lsp.informe()
+                    print("   [OK] Datos recopilados exitosamente")
+                    
+                    # 2. Enviar datos al servidor
+                    print("\n2) Enviando datos al servidor...")
+                    lsp.enviar_a_servidor()
+                    print("   [OK] Datos enviados al servidor")
+                    
+                    print(f"\n[DONE] Proceso completado exitosamente")
+                    print(f"{'='*70}\n")
+                    
+                except Exception as e:
+                    print(f"\n[ERROR] Error durante el proceso: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    print(f"{'='*70}\n")
+        
+        # Ejecutar escucha con callback (puerto desde .env)
+        escuchar_broadcast(on_message=manejar_broadcast)
 else:
     # Modo GUI: interfaz gráfica
     from sys import argv

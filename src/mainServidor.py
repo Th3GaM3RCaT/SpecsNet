@@ -281,23 +281,22 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     
     def cargar_detalles_dispositivo(self, serial):
         """Carga los detalles del dispositivo seleccionado"""
-        # DATOS DE PRUEBA - Reemplazar con consulta real
-        if serial == "SN001":
-            dti, mac, disk = 101, "00:1A:2B:3C:4D:5E", "512GB SSD"
-            ultimo_cambio = ("jperez", "Intel Core i7-11700", "Intel UHD 750", 16, 
-                           "512GB SSD", True, "192.168.1.50", "2024-10-15 14:30:00")
-        elif serial == "SN002":
-            dti, mac, disk = 102, "00:1A:2B:3C:4D:5F", "256GB SSD"
-            ultimo_cambio = ("mgarcia", "Intel Core i5-10500", "Intel UHD 630", 8, 
-                           "256GB SSD", True, "192.168.1.51", "2024-09-20 10:15:00")
-        else:
-            dti, mac, disk = 103, "00:1A:2B:3C:4D:60", "512GB SSD"
-            ultimo_cambio = None
+        # CONSULTA REAL: Obtener datos del dispositivo
+        sql, params = abrir_consulta("Dispositivos-select.sql", {"serial": serial})
+        cursor.execute(sql, params)
+        dispositivo = cursor.fetchone()
         
-        # CONSULTA REAL (descomenta):
-        # sql, params = abrir_consulta("Dispositivos-select.sql", {"serial": serial})
-        # cursor.execute(sql, params)
-        # dispositivo = cursor.fetchone()
+        if not dispositivo:
+            # Si no hay datos, limpiar labels
+            self.ui.labelInfoSerialValue.setText(serial)
+            self.ui.labelInfoDTIValue.setText('-')
+            self.ui.labelInfoMACValue.setText('-')
+            self.ui.labelInfoDiscoValue.setText('-')
+            return
+        
+        # Desempaquetar datos del dispositivo
+        # serial, DTI, user, MAC, model, processor, GPU, RAM, disk, license_status, ip, activo
+        db_serial, dti, user, mac, model, processor, gpu, ram, disk, license_status, ip, activo = dispositivo
         
         # Actualizar labels de información
         self.ui.labelInfoSerialValue.setText(serial)
@@ -306,12 +305,12 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.labelInfoDiscoValue.setText(disk or '-')
         
         # Cargar último cambio
-        # sql_cambio = """SELECT user, processor, GPU, RAM, disk, license_status, ip, date 
-        #                 FROM registro_cambios 
-        #                 WHERE Dispositivos_serial = ? 
-        #                 ORDER BY date DESC LIMIT 1"""
-        # cursor.execute(sql_cambio, (serial,))
-        # ultimo_cambio = cursor.fetchone()
+        sql_cambio = """SELECT user, processor, GPU, RAM, disk, license_status, ip, date 
+                        FROM registro_cambios 
+                        WHERE Dispositivos_serial = ? 
+                        ORDER BY date DESC LIMIT 1"""
+        cursor.execute(sql_cambio, (serial,))
+        ultimo_cambio = cursor.fetchone()
         
         if ultimo_cambio:
             user, processor, gpu, ram, disk, lic, ip, fecha = ultimo_cambio
@@ -404,8 +403,38 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
             if serial_item:
                 serial = serial_item.text()
-                QtWidgets.QMessageBox.information(self, "Diagnóstico", 
-                                                f"Abriendo diagnóstico completo de {serial}")
+                
+                # Consultar información de diagnóstico
+                sql, params = abrir_consulta("informacion_diagnostico-select.sql", {"Dispositivos_serial": serial})
+                cursor.execute(sql, params)
+                diagnostico = cursor.fetchone()
+                
+                # Crear ventana de diálogo
+                dialog = QtWidgets.QDialog(self)
+                dialog.setWindowTitle(f"Diagnóstico Completo - {serial}")
+                dialog.resize(600, 400)
+                
+                layout = QtWidgets.QVBoxLayout(dialog)
+                
+                # Texto con información
+                text_edit = QtWidgets.QTextEdit()
+                text_edit.setReadOnly(True)
+                
+                if diagnostico:
+                    # informacion_diagnostico: id, Dispositivos_serial, dxdiag_output_txt
+                    texto = f"<h2>Diagnóstico DirectX</h2><pre>{diagnostico[2] or 'No hay información de diagnóstico'}</pre>"
+                else:
+                    texto = "<p>No hay información de diagnóstico para este dispositivo.</p>"
+                
+                text_edit.setHtml(texto)
+                layout.addWidget(text_edit)
+                
+                # Botón cerrar
+                btn_cerrar = QtWidgets.QPushButton("Cerrar")
+                btn_cerrar.clicked.connect(dialog.close)
+                layout.addWidget(btn_cerrar)
+                
+                dialog.exec()
     
     def ver_aplicaciones(self):
         """Abre ventana de aplicaciones instaladas"""
@@ -414,8 +443,45 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
             if serial_item:
                 serial = serial_item.text()
-                QtWidgets.QMessageBox.information(self, "Aplicaciones", 
-                                                f"Mostrando aplicaciones instaladas en {serial}")
+                
+                # Consultar aplicaciones
+                sql, params = abrir_consulta("aplicaciones-select.sql", {"Dispositivos_serial": serial})
+                cursor.execute(sql, params)
+                aplicaciones = cursor.fetchall()
+                
+                # Crear ventana de diálogo
+                dialog = QtWidgets.QDialog(self)
+                dialog.setWindowTitle(f"Aplicaciones Instaladas - {serial}")
+                dialog.resize(800, 500)
+                
+                layout = QtWidgets.QVBoxLayout(dialog)
+                
+                # Tabla de aplicaciones
+                table = QtWidgets.QTableWidget()
+                table.setColumnCount(3)
+                table.setHorizontalHeaderLabels(["Nombre", "Versión", "Editor"])
+                table.horizontalHeader().setStretchLastSection(True)
+                
+                if aplicaciones:
+                    table.setRowCount(len(aplicaciones))
+                    for i, app in enumerate(aplicaciones):
+                        # aplicaciones SQL: Dispositivos_serial, name, version, publisher, id
+                        # Indices:           0,                  1,    2,       3,         4
+                        table.setItem(i, 0, QtWidgets.QTableWidgetItem(app[1] or '-'))  # name
+                        table.setItem(i, 1, QtWidgets.QTableWidgetItem(app[2] or '-'))  # version
+                        table.setItem(i, 2, QtWidgets.QTableWidgetItem(app[3] or '-'))  # publisher
+                else:
+                    table.setRowCount(1)
+                    table.setItem(0, 0, QtWidgets.QTableWidgetItem("No hay aplicaciones registradas"))
+                
+                layout.addWidget(table)
+                
+                # Botón cerrar
+                btn_cerrar = QtWidgets.QPushButton("Cerrar")
+                btn_cerrar.clicked.connect(dialog.close)
+                layout.addWidget(btn_cerrar)
+                
+                dialog.exec()
     
     def ver_almacenamiento(self):
         """Abre ventana de detalles de almacenamiento"""
@@ -424,8 +490,47 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
             if serial_item:
                 serial = serial_item.text()
-                QtWidgets.QMessageBox.information(self, "Almacenamiento", 
-                                                f"Detalles de almacenamiento de {serial}")
+                
+                # Consultar almacenamiento
+                sql, params = abrir_consulta("almacenamiento-select.sql", {"Dispositivos_serial": serial})
+                cursor.execute(sql, params)
+                discos = cursor.fetchall()
+                
+                # Crear ventana de diálogo
+                dialog = QtWidgets.QDialog(self)
+                dialog.setWindowTitle(f"Detalles de Almacenamiento - {serial}")
+                dialog.resize(700, 400)
+                
+                layout = QtWidgets.QVBoxLayout(dialog)
+                
+                # Tabla de discos
+                table = QtWidgets.QTableWidget()
+                table.setColumnCount(4)
+                table.setHorizontalHeaderLabels(["Unidad", "Tipo", "Capacidad (GB)", "Fecha"])
+                table.horizontalHeader().setStretchLastSection(True)
+                
+                if discos:
+                    table.setRowCount(len(discos))
+                    for i, disco in enumerate(discos):
+                        # almacenamiento SQL: Dispositivos_serial, nombre, capacidad, tipo, actual, id, fecha_instalacion
+                        # Indices:            0,                  1,      2,         3,     4,      5,  6
+                        table.setItem(i, 0, QtWidgets.QTableWidgetItem(disco[1] or '-'))  # nombre (unidad)
+                        table.setItem(i, 1, QtWidgets.QTableWidgetItem(disco[3] or '-'))  # tipo
+                        table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(disco[2] or '-')))  # capacidad
+                        fecha = disco[6][:10] if disco[6] else '-'  # Solo la fecha sin hora
+                        table.setItem(i, 3, QtWidgets.QTableWidgetItem(fecha))
+                else:
+                    table.setRowCount(1)
+                    table.setItem(0, 0, QtWidgets.QTableWidgetItem("No hay información de almacenamiento"))
+                
+                layout.addWidget(table)
+                
+                # Botón cerrar
+                btn_cerrar = QtWidgets.QPushButton("Cerrar")
+                btn_cerrar.clicked.connect(dialog.close)
+                layout.addWidget(btn_cerrar)
+                
+                dialog.exec()
     
     def ver_memoria(self):
         """Abre ventana de detalles de memoria"""
@@ -434,8 +539,47 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
             if serial_item:
                 serial = serial_item.text()
-                QtWidgets.QMessageBox.information(self, "Memoria RAM", 
-                                                f"Detalles de memoria RAM de {serial}")
+                
+                # Consultar memoria
+                sql, params = abrir_consulta("memoria-select.sql", {"Dispositivos_serial": serial})
+                cursor.execute(sql, params)
+                modulos = cursor.fetchall()
+                
+                # Crear ventana de diálogo
+                dialog = QtWidgets.QDialog(self)
+                dialog.setWindowTitle(f"Detalles de Memoria RAM - {serial}")
+                dialog.resize(700, 400)
+                
+                layout = QtWidgets.QVBoxLayout(dialog)
+                
+                # Tabla de módulos de RAM
+                table = QtWidgets.QTableWidget()
+                table.setColumnCount(5)
+                table.setHorizontalHeaderLabels(["Módulo", "Fabricante", "Capacidad (GB)", "Velocidad (MHz)", "Número de Serie"])
+                table.horizontalHeader().setStretchLastSection(True)
+                
+                if modulos:
+                    table.setRowCount(len(modulos))
+                    for i, mod in enumerate(modulos):
+                        # memoria SQL: Dispositivos_serial, modulo, fabricante, capacidad, velocidad, numero_serie, actual, id, fecha_instalacion
+                        # Indices:     0,                  1,      2,          3,          4,         5,             6,      7,  8
+                        table.setItem(i, 0, QtWidgets.QTableWidgetItem(mod[1] or '-'))  # modulo
+                        table.setItem(i, 1, QtWidgets.QTableWidgetItem(mod[2] or '-'))  # fabricante
+                        table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(mod[3] or '-')))  # capacidad
+                        table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(mod[4] or '-')))  # velocidad
+                        table.setItem(i, 4, QtWidgets.QTableWidgetItem(mod[5] or '-'))  # numero_serie
+                else:
+                    table.setRowCount(1)
+                    table.setItem(0, 0, QtWidgets.QTableWidgetItem("No hay información de memoria"))
+                
+                layout.addWidget(table)
+                
+                # Botón cerrar
+                btn_cerrar = QtWidgets.QPushButton("Cerrar")
+                btn_cerrar.clicked.connect(dialog.close)
+                layout.addWidget(btn_cerrar)
+                
+                dialog.exec()
     
     def ver_historial(self):
         """Abre ventana de historial completo de cambios"""
@@ -444,8 +588,58 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             serial_item = self.ui.tableDispositivos.item(selected[0].row(), 2)
             if serial_item:
                 serial = serial_item.text()
-                QtWidgets.QMessageBox.information(self, "Historial", 
-                                                f"Historial completo de cambios de {serial}")
+                
+                # Consultar historial completo
+                sql = """SELECT user, processor, GPU, RAM, disk, license_status, ip, date 
+                         FROM registro_cambios 
+                         WHERE Dispositivos_serial = ? 
+                         ORDER BY date DESC"""
+                cursor.execute(sql, (serial,))
+                cambios = cursor.fetchall()
+                
+                # Crear ventana de diálogo
+                dialog = QtWidgets.QDialog(self)
+                dialog.setWindowTitle(f"Historial de Cambios - {serial}")
+                dialog.resize(900, 500)
+                
+                layout = QtWidgets.QVBoxLayout(dialog)
+                
+                # Tabla de historial
+                table = QtWidgets.QTableWidget()
+                table.setColumnCount(8)
+                table.setHorizontalHeaderLabels(["Fecha", "Usuario", "Procesador", "GPU", "RAM (GB)", "Disco", "Licencia", "IP"])
+                table.horizontalHeader().setStretchLastSection(False)
+                
+                if cambios:
+                    table.setRowCount(len(cambios))
+                    for i, cambio in enumerate(cambios):
+                        # user, processor, GPU, RAM, disk, license_status, ip, date
+                        user, processor, gpu, ram, disk, lic, ip, fecha = cambio
+                        table.setItem(i, 0, QtWidgets.QTableWidgetItem(fecha or '-'))
+                        table.setItem(i, 1, QtWidgets.QTableWidgetItem(user or '-'))
+                        table.setItem(i, 2, QtWidgets.QTableWidgetItem(processor or '-'))
+                        table.setItem(i, 3, QtWidgets.QTableWidgetItem(gpu or '-'))
+                        table.setItem(i, 4, QtWidgets.QTableWidgetItem(str(ram or '-')))
+                        table.setItem(i, 5, QtWidgets.QTableWidgetItem(disk or '-'))
+                        
+                        lic_item = QtWidgets.QTableWidgetItem('Activa' if lic else 'Inactiva')
+                        if not lic:
+                            lic_item.setForeground(QBrush(QColor(200, 0, 0)))
+                        table.setItem(i, 6, lic_item)
+                        
+                        table.setItem(i, 7, QtWidgets.QTableWidgetItem(ip or '-'))
+                else:
+                    table.setRowCount(1)
+                    table.setItem(0, 0, QtWidgets.QTableWidgetItem("No hay cambios registrados para este dispositivo"))
+                
+                layout.addWidget(table)
+                
+                # Botón cerrar
+                btn_cerrar = QtWidgets.QPushButton("Cerrar")
+                btn_cerrar.clicked.connect(dialog.close)
+                layout.addWidget(btn_cerrar)
+                
+                dialog.exec()
     
     def iniciar_escaneo_completo(self):
         """

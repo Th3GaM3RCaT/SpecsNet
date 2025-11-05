@@ -72,9 +72,9 @@ def abrir_consulta(
         "almacenamiento-select.sql",
         "aplicaciones-select.sql",
         "Dispositivos-select.sql",
-        "informacion-diagnostico-select.sql",
+        "informacion_diagnostico-select.sql",
         "memoria-select.sql",
-        "registro-cambios-select.sql",
+        "registro_cambios-select.sql",
     ],
     condiciones: Optional[dict] = None
 ) -> tuple[str, tuple]:
@@ -265,6 +265,77 @@ def setDevice(info_dispositivo = tuple()):
             info_dispositivo[4], info_dispositivo[5], info_dispositivo[6], info_dispositivo[7],
             info_dispositivo[8], info_dispositivo[9], info_dispositivo[10], info_dispositivo[11]
     ))
+
+def actualizar_serial_temporal(serial_real, mac):
+    """Actualiza el serial temporal (TEMP_{MAC}) por el serial real del BIOS.
+    
+    Args:
+        serial_real (str): Serial real obtenido del BIOS
+        mac (str): MAC address del dispositivo (para buscar serial temporal)
+    
+    Returns:
+        bool: True si se actualizó algún registro, False si no existía serial temporal
+    
+    Note:
+        Esta función busca dispositivos con serial temporal basado en MAC
+        (formato: TEMP_{MAC_sin_separadores}) y los actualiza con el serial real.
+        También actualiza todas las tablas relacionadas.
+    """
+    if not serial_real or serial_real.startswith("TEMP"):
+        return False  # No actualizar si el serial sigue siendo temporal
+    
+    if not mac:
+        return False
+    
+    # Generar serial temporal esperado (formato usado al crear desde CSV)
+    serial_temporal = f"TEMP_{mac.replace(':', '').replace('-', '')}"
+    
+    # Verificar si existe dispositivo con serial temporal
+    cursor.execute("SELECT serial FROM Dispositivos WHERE serial = ?", (serial_temporal,))
+    if not cursor.fetchone():
+        return False  # No existe dispositivo con serial temporal
+    
+    print(f"[UPDATE] Actualizando serial temporal {serial_temporal} -> {serial_real}")
+    
+    # Actualizar todas las tablas relacionadas
+    # 1. Dispositivos
+    cursor.execute("""UPDATE Dispositivos 
+                     SET serial = ? 
+                     WHERE serial = ?""", (serial_real, serial_temporal))
+    
+    # 2. activo
+    cursor.execute("""UPDATE activo 
+                     SET Dispositivos_serial = ? 
+                     WHERE Dispositivos_serial = ?""", (serial_real, serial_temporal))
+    
+    # 3. registro_cambios
+    cursor.execute("""UPDATE registro_cambios 
+                     SET Dispositivos_serial = ? 
+                     WHERE Dispositivos_serial = ?""", (serial_real, serial_temporal))
+    
+    # 4. almacenamiento
+    cursor.execute("""UPDATE almacenamiento 
+                     SET Dispositivos_serial = ? 
+                     WHERE Dispositivos_serial = ?""", (serial_real, serial_temporal))
+    
+    # 5. memoria
+    cursor.execute("""UPDATE memoria 
+                     SET Dispositivos_serial = ? 
+                     WHERE Dispositivos_serial = ?""", (serial_real, serial_temporal))
+    
+    # 6. aplicaciones
+    cursor.execute("""UPDATE aplicaciones 
+                     SET Dispositivos_serial = ? 
+                     WHERE Dispositivos_serial = ?""", (serial_real, serial_temporal))
+    
+    # 7. informacion_diagnostico
+    cursor.execute("""UPDATE informacion_diagnostico 
+                     SET Dispositivos_serial = ? 
+                     WHERE Dispositivos_serial = ?""", (serial_real, serial_temporal))
+    
+    connection.commit()
+    print(f"[OK] Serial actualizado exitosamente en todas las tablas")
+    return True
 
 def setActive(dispositivoEstado = tuple()):
     """Inserta estado de actividad de un dispositivo (encendido/apagado).

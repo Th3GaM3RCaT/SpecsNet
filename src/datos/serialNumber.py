@@ -8,6 +8,12 @@ def run_cmd(cmd):
         return ""
 
 def get_serial():
+    """
+    Obtiene el serial number del BIOS del sistema.
+    
+    Returns:
+        str: Serial number si se encuentra, string vacío si no se puede obtener
+    """
     # try WMI python module first
     try:
         import wmi
@@ -15,7 +21,7 @@ def get_serial():
         bios = c.Win32_BIOS()
         if bios:
             s = bios[0].SerialNumber
-            if s:
+            if s and s.strip():
                 return s.strip()
     except Exception:
         pass
