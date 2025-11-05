@@ -1,0 +1,7 @@
+{
+    "server_ip": "10.100.2.152",
+    "server_port": 5255,
+    "use_discovery": false,
+    "discovery_port": 37020,
+    "connection_timeout": 10
+}

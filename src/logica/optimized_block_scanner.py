@@ -21,13 +21,17 @@ import os
 from pathlib import Path
 from itertools import islice
 
-# Importar función de población de MACs desde src/
-import sys
-import os
-# Agregar src/ al path para importar módulos
-src_path = os.path.join(os.path.dirname(__file__), '..', 'src')
-sys.path.insert(0, src_path)
-from datos.scan_ip_mac import update_csv_with_macs  # type: ignore[import]
+# Importar función de población de MACs desde datos/
+# Usar import absoluto que funciona tanto en desarrollo como en PyInstaller
+try:
+    from datos.scan_ip_mac import update_csv_with_macs
+except ImportError:
+    # Si falla, agregar src/ al path y reintentar
+    import sys
+    src_path = Path(__file__).parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+    from datos.scan_ip_mac import update_csv_with_macs
 
 # ------------------ CONFIGURACIÓN OPTIMIZADA ------------------
 # Cargar configuración desde .env si está disponible
@@ -56,8 +60,10 @@ CONCURRENCY = 300
 MAX_PARALLEL_SEGMENTS = 10
 USE_BROADCAST_PROBE = True
 
-# Directorio para archivos de salida
-OUTPUT_DIR = Path(__file__).parent.parent / output_dir_str
+# Directorio para archivos de salida (raíz del proyecto)
+# Desde src/logica/ subimos 2 niveles para llegar a la raíz
+project_root = Path(__file__).parent.parent.parent
+OUTPUT_DIR = project_root / output_dir_str
 OUTPUT_DIR.mkdir(exist_ok=True)
 CSV_FILENAME = OUTPUT_DIR / "discovered_devices.csv"
 

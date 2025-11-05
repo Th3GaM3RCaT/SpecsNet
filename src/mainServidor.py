@@ -464,28 +464,19 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def ejecutar_escaneo_red(self):
         """Paso 1: Ejecuta optimized_block_scanner.py"""
         def callback_escaneo():
-            import subprocess
             try:
                 print("\n=== Ejecutando escaneo de red ===")
-                # Ya no se necesitan argumentos - configuracion esta en el archivo
-                result = subprocess.run(
-                    ['python', 'optimized_block_scanner.py'],
-                    capture_output=True,
-                    text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-                )
-                print(result.stdout)
-                if result.stderr:
-                    print("Errores:", result.stderr)
+                # Importar y ejecutar directamente en lugar de subprocess
+                from logica import optimized_block_scanner
                 
-                if result.returncode == 0:
-                    print(">> Escaneo completado exitosamente")
-                    return True
-                else:
-                    print(f">> Error en escaneo: codigo {result.returncode}")
-                    return False
+                # Ejecutar la función main del scanner
+                optimized_block_scanner.main()
+                
+                print(">> Escaneo completado exitosamente")
+                return True
+                
             except Exception as e:
-                print(f">> Excepcion en escaneo: {e}")
+                print(f">> Excepción en escaneo: {e}")
                 import traceback
                 traceback.print_exc()
                 return False
