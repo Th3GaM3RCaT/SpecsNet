@@ -387,12 +387,12 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 #### Cliente:
 ```powershell
-pyinstaller --onedir --noconsole --name "SpecsCliente" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --hidden-import=getmac --hidden-import=windows_tools.installed_software --paths=src src/specs.py
+pyinstaller --onedir --noconsole --name "SpecsNet - Cliente" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --hidden-import=getmac --hidden-import=windows_tools.installed_software --paths=src src/specs.py
 ```
 
 #### Servidor:
 ```powershell
-pyinstaller --onedir --noconsole --name "SpecsServidor" --add-data "src/sql/statement/*.sql;sql/statement" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --paths=src src/servidor.py
+pyinstaller --onedir --noconsole --name "SpecsNet - Servidor" --add-data "src/sql/statement/*.sql;sql/statement" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --paths=src src/mainServidor.py
 ```
 
 ### Resultado
