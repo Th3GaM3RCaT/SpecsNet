@@ -251,105 +251,50 @@ class Monitor:
 
 
 class Scanner:
-    """Responsable de ejecutar el escaneo de red y poblar DB desde CSV.
-
-    Implementación mínima: wrapper para ejecutar el scanner externo si existe y
-    delegar el parseo/poblado a funciones existentes.
-    """
+    """Responsable de ejecutar el escaneo de red y poblar DB desde CSV."""
+    
     def __init__(self, scanner_script: Optional[str] = None):
         self.scanner_script = scanner_script or str(Path(__file__).parent.parent.parent / 'optimized_block_scanner.py')
 
-    def run_scan(self, start: int = 100, end: int = 119, use_broadcast_probe: bool = True):
-        """Ejecuta el escaneo externo y devuelve la ruta al CSV generado.
-
-        Nota: esta función invoca el script externo y asume que genera
-        `discovered_devices.csv` en la raíz o en `output/`.
+    def run_scan(self):
+        """Ejecuta el escaneo de red IMPORTANDO el módulo y devuelve la ruta al CSV generado.
+        
+        Ventajas vs subprocess:
+        - No requiere Python instalado en el sistema
+        - Funciona en ejecutables PyInstaller
+        - Mas rapido (sin overhead de proceso externo)
+        - Mejor manejo de errores
         """
-        import subprocess
-        args = [self.scanner_script, '--start', str(start), '--end', str(end)]
-        if use_broadcast_probe:
-            args.append('--use-broadcast-probe')
-
+        import sys
+        from pathlib import Path
+        
+        # Asegurar que la raiz del proyecto este en sys.path
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        
         try:
-            subprocess.run([ 'python', *args], check=True)
+            # Importar como modulo en lugar de ejecutar como script
+            import optimized_block_scanner
+            
+            # Llamar a la funcion principal con los parametros
+            csv_path = optimized_block_scanner.main(
+            )
+            
+            # La funcion debe retornar la ruta del CSV generado
+            if csv_path and Path(csv_path).exists():
+                print(f"[Scanner] CSV generado: {csv_path}")
+                return str(csv_path)
+            else:
+                raise FileNotFoundError(f"CSV no generado por scanner: {csv_path}")
+                
+        except AttributeError as e:
+            print(f"[Scanner] Error: optimized_block_scanner.py debe tener una funcion main() que retorne la ruta del CSV")
+            print(f"[Scanner] Detalles: {e}")
+            raise
         except Exception as e:
             print(f"[Scanner] Error ejecutando scanner: {e}")
             raise
-
-        # Determinar CSV generado
-        project_root = Path(__file__).parent.parent.parent
-        output_dir = project_root / 'output'
-        csv_path = output_dir / 'discovered_devices.csv'
-        if csv_path.exists():
-            return str(csv_path)
-
-        # Buscar en raíz
-        csv_root = project_root / 'discovered_devices.csv'
-        if csv_root.exists():
-            return str(csv_root)
-
-        raise FileNotFoundError('discovered_devices.csv no encontrado después del escaneo')
-
-    def parse_csv_to_db(self, csv_path: Optional[str]):
-        """Pobla la base de datos con entradas mínimas desde el CSV (IP/MAC).
-
-        Implementación mínima: si existe una función en `sql` para insertar, usarla.
-        """
-        # Obtener lista de IPs desde CSV
-        ips = cargar_ips_desde_csv(csv_path)
-        if not ips:
-            return 0
-
-        inserted = 0
-        # Usar conexión thread-safe para esta operación
-        try:
-            conn = sql.get_thread_safe_connection()
-            cur = conn.cursor()
-
-            for ip, mac in ips:
-                try:
-                    cur.execute("SELECT serial, MAC FROM Dispositivos WHERE ip = ?", (ip,))
-                    existe = cur.fetchone()
-
-                    if not existe:
-                        serial = f"TEMP_{mac.replace(':','').replace('-','')}" if mac else f"TEMP_{ip.replace('.','') }"
-                        datos_basicos = (
-                            serial,
-                            None,
-                            None,
-                            mac,
-                            "Pendiente escaneo",
-                            None,
-                            None,
-                            0,
-                            None,
-                            False,
-                            ip,
-                            False,
-                        )
-                        cur.execute(
-                            """INSERT INTO Dispositivos (serial, DTI, user, MAC, model, processor, GPU, RAM, disk, license_status, ip, activo)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                            datos_basicos,
-                        )
-                        inserted += 1
-                    else:
-                        serial_existente = existe[0]
-                        mac_existente = existe[1]
-                        if mac and not mac_existente:
-                            cur.execute("UPDATE Dispositivos SET ip = ?, MAC = ? WHERE serial = ?", (ip, mac, serial_existente))
-                        else:
-                            cur.execute("UPDATE Dispositivos SET ip = ? WHERE serial = ?", (ip, serial_existente))
-                except Exception as e:
-                    print(f"[Scanner] Error poblando DB para {ip}: {e}")
-
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"[Scanner] Error con conexión DB en parse_csv_to_db: {e}")
-
-        return inserted
-
 
 def parsear_datos_dispositivo(json_data):
     """
