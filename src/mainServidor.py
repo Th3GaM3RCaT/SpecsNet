@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QMainWindow
 import sys
 import asyncio
 from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
-from sql.consultas_sql import cursor, abrir_consulta  # Funciones de DB
+from sql.ejecutar_sql import cursor, abrir_consulta  # Funciones de DB
 from logica import logica_servidor as ls  # Importar lógica del servidor
 from logica.logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
 from typing import Optional
