@@ -1,7 +1,6 @@
 import sys
 import sqlite3
 from typing import Literal, Optional
-from os.path import join, exists
 
 # Inicializar base de datos
 def inicializar_db():
@@ -134,7 +133,6 @@ def setaplication(aplicacion=tuple()):
                        VALUES (?,?,?,?)""",
                        (aplicacion[0], aplicacion[1], aplicacion[2], aplicacion[3]))
 
-
 def setAlmacenamiento(almacenamiento=tuple(), indice=1):
     """
     Inserta información de almacenamiento en la BD.
@@ -163,7 +161,6 @@ def setAlmacenamiento(almacenamiento=tuple(), indice=1):
                    (almacenamiento[0], almacenamiento[1], almacenamiento[2], 
                     almacenamiento[3], almacenamiento[4], almacenamiento[5]))
 
-
 def setMemoria(memoria=tuple(), indice=1):
     """
     Inserta información de módulo RAM en la BD.
@@ -191,13 +188,6 @@ def setMemoria(memoria=tuple(), indice=1):
                    VALUES (?,?,?,?,?,?,?,?)""",
                    (memoria[0], memoria[1], memoria[2], memoria[3], 
                     memoria[4], memoria[5], memoria[6], memoria[7]))
-    
-
-
-
-
-
-
 
 def setInformeDiagnostico(informes = tuple()):
     """Inserta información de diagnóstico de dispositivo en la base de datos.
@@ -214,7 +204,7 @@ def setInformeDiagnostico(informes = tuple()):
                    VALUES (?,?,?,?)""",
                    (informes[0], informes[1], informes[2], informes[3]))
     
-def setResgistro_cambios(registro = tuple()):
+def setRegistro_cambios(registro = tuple()):
     """Registra cambios de especificaciones de hardware/software de un dispositivo.
     
     Args:
@@ -356,7 +346,6 @@ def setActive(dispositivoEstado = tuple()):
                    VALUES (?,?,?)""", (
                        dispositivoEstado[0], dispositivoEstado[1], dispositivoEstado[2]
                        ))
-
 
 def set_dispositivo_inicial(ip, mac):
     """

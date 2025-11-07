@@ -392,7 +392,7 @@ pyinstaller --onedir --noconsole --name "SpecsNet - Cliente" --add-data "src/ui/
 
 #### Servidor:
 ```powershell
-pyinstaller --onedir --noconsole --name "SpecsNet - Servidor" --add-data "src/sql/statement/*.sql;sql/statement" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --paths=src src/mainServidor.py
+pyinstaller --onedir --noconsole --name "SpecsNet - Servidor" --add-data "src/sql/statement/*.sql;sql/statement" --add-data "src/sql/specs.sql;sql" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --paths=src src/mainServidor.py
 ```
 
 ### Resultado
