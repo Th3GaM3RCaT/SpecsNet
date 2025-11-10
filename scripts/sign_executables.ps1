@@ -49,7 +49,7 @@ if (-not $signtool) {
         Write-Error-Custom "signtool.exe no encontrado"
         Write-Warning-Custom "Instalar Windows SDK desde:"
         Write-Host "  https://developer.microsoft.com/windows/downloads/windows-sdk/`n" -ForegroundColor Yellow
-        exit 1
+        Throw
     }
 }
 
@@ -61,7 +61,7 @@ if (-not (Test-Path $CertPath)) {
     Write-Warning-Custom "Opciones:"
     Write-Host "  1. Crear certificado auto-firmado con: .\create_self_signed_cert.ps1" -ForegroundColor Yellow
     Write-Host "  2. Usar certificado comercial: -CertPath 'ruta\al\certificado.pfx'`n" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
 
 Write-Success "Certificado encontrado: $CertPath"
@@ -84,7 +84,7 @@ if ($executables.Count -eq 0) {
     Write-Error-Custom "No se encontraron ejecutables en dist/"
     Write-Warning-Custom "Compilar primero con PyInstaller:`n"
     Write-Host "  pyinstaller --onedir --noconsole servidor.py" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
 
 Write-Info "Ejecutables encontrados: $($executables.Count)`n"
@@ -152,8 +152,8 @@ if ($failedCount -gt 0) {
 
 if ($signedCount -eq $executables.Count) {
     Write-Host "`n✅ TODOS LOS EJECUTABLES FIRMADOS CORRECTAMENTE`n" -ForegroundColor Green
-    exit 0
+    Throw
 } else {
     Write-Host "`n⚠️  ALGUNOS EJECUTABLES NO SE PUDIERON FIRMAR`n" -ForegroundColor Yellow
-    exit 1
+    Throw
 }

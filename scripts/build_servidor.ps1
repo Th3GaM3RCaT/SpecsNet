@@ -8,7 +8,7 @@ Write-Host ""
 if (!(Test-Path "src/servidor.py")) {
     Write-Host "❌ Error: Ejecuta este script desde la raíz del proyecto" -ForegroundColor Red
     Write-Host "   Ejemplo: .\scripts\build_servidor.ps1" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
 
 # Verificar que PyInstaller está instalado
@@ -17,7 +17,7 @@ try {
 } catch {
     Write-Host "❌ PyInstaller no está instalado" -ForegroundColor Red
     Write-Host "   Instala con: pip install pyinstaller" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
 
 # Limpiar builds anteriores
@@ -50,7 +50,7 @@ $pyinstallerArgs = @(
     "--hidden-import=PySide6.QtGui",
     "--hidden-import=PySide6.QtWidgets",
     "--paths=src",
-    "src/servidor.py"
+    "src/mainServidor.py"
 )
 
 # Agregar security_config si existe
@@ -80,5 +80,5 @@ if (Test-Path "dist/SpecsNet - Servidor/SpecsNet - Servidor.exe") {
     Write-Host ""
     Write-Host "❌ Error en la compilación" -ForegroundColor Red
     Write-Host "   Revisa los logs arriba para más detalles" -ForegroundColor Yellow
-    exit 1
+    Throw
 }

@@ -10,7 +10,7 @@ $pythonVersion = python --version 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Python no está instalado" -ForegroundColor Red
     Write-Host "   Descarga Python desde: https://www.python.org/downloads/" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
 Write-Host "✓ Python encontrado: $pythonVersion" -ForegroundColor Green
 
@@ -19,7 +19,7 @@ Write-Host "`n📦 Creando entorno virtual..." -ForegroundColor Yellow
 python -m venv venv
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Error al crear entorno virtual" -ForegroundColor Red
-    exit 1
+    Throw
 }
 Write-Host "✓ Entorno virtual creado" -ForegroundColor Green
 
@@ -33,7 +33,7 @@ if (Test-Path "requirements.txt") {
     pip install -r requirements.txt
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Error al instalar dependencias" -ForegroundColor Red
-        exit 1
+        Throw
     }
     Write-Host "✓ Dependencias instaladas" -ForegroundColor Green
 } else {

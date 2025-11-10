@@ -113,7 +113,7 @@ specs-python/
 
 ```powershell
 # Clonar repositorio
-git clone https://github.com/Th3GaM3RCaT/specs-python.git
+git clone https://github.com/Th3GaM3RCaT/SpecsNet.git
 cd specs-python
 
 # Ejecutar instalador automático
@@ -386,23 +386,23 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 #### Cliente:
 ```powershell
-pyinstaller --onedir --noconsole --name "SpecsNet - Cliente" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --hidden-import=getmac --hidden-import=windows_tools.installed_software --paths=src src/specs.py
+pyinstaller --onedir --noconsole --name "SpecsNet - Cliente" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --hidden-import=getmac --hidden-import=windows_tools.installed_software --hidden-import=wmi --hidden-import=psutil --hidden-import=getmac --hidden-import=windows_tools.installed_software --hidden-import=PySide6 --hidden-import=PySide6.QtCore --hidden-import=PySide6.QtGui --hidden-import=PySide6.QtWidgets --paths=src src/specs.py
 ```
 
 #### Servidor:
 ```powershell
-pyinstaller --onedir --noconsole --name "SpecsNet - Servidor" --add-data "src/sql/statement/*.sql;sql/statement" --add-data "src/sql/specs.sql;sql" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --paths=src src/mainServidor.py
+pyinstaller --onedir --noconsole --name "SpecsNet - Servidor" --add-data "src/sql/statement/*.sql;sql/statement" --add-data "src/sql/specs.sql;sql" --add-data "src/ui/*.ui;ui" --hidden-import=wmi --hidden-import=psutil --hidden-import=getmac --hidden-import=windows_tools.installed_software --hidden-import=PySide6 --hidden-import=PySide6.QtCore --hidden-import=PySide6.QtGui --hidden-import=PySide6.QtWidgets --paths=src src/mainServidor.py
 ```
 
 ### Resultado
 
 Los ejecutables se generan en:
-- **Cliente**: `dist/SpecsCliente/SpecsCliente.exe`
-- **Servidor**: `dist/SpecsServidor/SpecsServidor.exe`
+- **Cliente**: `dist/SpecsNet - Cliente/SpecsNet - Cliente.exe`
+- **Servidor**: `dist/SpecsNet - Servidor/SpecsNet - Servidor.exe`
 
 Para distribuir, comprime las carpetas completas:
-- `dist/SpecsCliente/` → `SpecsCliente.zip`
-- `dist/SpecsServidor/` → `SpecsServidor.zip`
+- `dist/SpecsNet - Cliente/` → `SpecsNet - Cliente.zip`
+- `dist/SpecsNet - Servidor/` → `SpecsNet - Servidor.zip`
 
 ### Notas de Compilación
 
@@ -428,7 +428,7 @@ Para distribuir, comprime las carpetas completas:
 Si el ejecutable falla al iniciar, usa `--console` para ver errores:
 
 ```powershell
-pyinstaller --onedir --console --name "SpecsCliente_Debug" --paths=src src/specs.py
+pyinstaller --onedir --console --name "SpecsNet - Cliente_Debug" --paths=src src/specs.py
 ```
 
 Esto mostrará la ventana de consola con los errores de Python.

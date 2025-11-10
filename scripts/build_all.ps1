@@ -10,10 +10,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [switch]$SkipClient,
-    
-    [Parameter(Mandatory=$false)]
-    [switch]$SkipInventory
-)
+ 
 
 $ErrorActionPreference = "Stop"
 
@@ -30,7 +27,7 @@ try {
     pip install pyinstaller
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Error al instalar PyInstaller" -ForegroundColor Red
-        exit 1
+        Throw
     }
 }
 
@@ -70,10 +67,18 @@ if (-not $SkipServer) {
             "pyinstaller",
             "--onedir",
             "--noconsole",
-            "servidor.py",
+            "mainServidor.py",
             "--add-data=sql_specs/statement/*.sql;sql_specs/statement",
             "--add-data=ui/*.ui;ui",
-            "--name=SpecsServidor",
+            "--hidden-import=wmi",
+            "--hidden-import=psutil",
+            "--hidden-import=getmac",
+            "--hidden-import=windows_tools.installed_software",
+            "--hidden-import=PySide6",
+            "--hidden-import=PySide6.QtCore",
+            "--hidden-import=PySide6.QtGui",
+            "--hidden-import=PySide6.QtWidgets",
+            "--name=SpecsNet - Servidor",
             $iconParam,
             "--clean"
         ) | Where-Object { $_ -ne "" }
@@ -82,14 +87,14 @@ if (-not $SkipServer) {
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "`n✅ Servidor compilado exitosamente" -ForegroundColor Green
-            $compiled += "SpecsServidor"
+            $compiled += "SpecsNet - Servidor"
         } else {
             Write-Host "`n❌ Error al compilar servidor" -ForegroundColor Red
-            $failed += "SpecsServidor"
+            $failed += "SpecsNet - Servidor"
         }
     } catch {
         Write-Host "`n❌ Excepción al compilar servidor: $($_.Exception.Message)" -ForegroundColor Red
-        $failed += "SpecsServidor"
+        $failed += "SpecsNet - Servidor"
     }
 }
 
@@ -112,6 +117,14 @@ if (-not $SkipClient) {
             "--noconsole",
             "specs.py",
             "--add-data=ui/*.ui;ui",
+            "--hidden-import=wmi",
+            "--hidden-import=psutil",
+            "--hidden-import=getmac",
+            "--hidden-import=windows_tools.installed_software",
+            "--hidden-import=PySide6",
+            "--hidden-import=PySide6.QtCore",
+            "--hidden-import=PySide6.QtGui",
+            "--hidden-import=PySide6.QtWidgets",
             "--name=SpecsCliente",
             $iconParam,
             "--clean"
@@ -129,46 +142,6 @@ if (-not $SkipClient) {
     } catch {
         Write-Host "`n❌ Excepción al compilar cliente: $($_.Exception.Message)" -ForegroundColor Red
         $failed += "SpecsCliente"
-    }
-}
-
-# =============================================================================
-# COMPILAR INVENTARIO
-# =============================================================================
-if (-not $SkipInventory) {
-    Write-Host "`n" + ("=" * 60) -ForegroundColor Cyan
-    Write-Host "📦 COMPILANDO INVENTARIO" -ForegroundColor Cyan
-    Write-Host ("=" * 60) -ForegroundColor Cyan
-    
-    Write-Host "`nArchivo: all_specs.py" -ForegroundColor White
-    Write-Host "Incluye: UI files, SQL statements" -ForegroundColor DarkGray
-    Write-Host "Modo: Sin consola (GUI)`n" -ForegroundColor DarkGray
-    
-    try {
-        $cmd = @(
-            "pyinstaller",
-            "--onedir",
-            "--noconsole",
-            "all_specs.py",
-            "--add-data=ui/*.ui;ui",
-            "--add-data=sql_specs/statement/*.sql;sql_specs/statement",
-            "--name=SpecsInventario",
-            $iconParam,
-            "--clean"
-        ) | Where-Object { $_ -ne "" }
-        
-        & $cmd[0] $cmd[1..($cmd.Length-1)]
-        
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "`n✅ Inventario compilado exitosamente" -ForegroundColor Green
-            $compiled += "SpecsInventario"
-        } else {
-            Write-Host "`n❌ Error al compilar inventario" -ForegroundColor Red
-            $failed += "SpecsInventario"
-        }
-    } catch {
-        Write-Host "`n❌ Excepción al compilar inventario: $($_.Exception.Message)" -ForegroundColor Red
-        $failed += "SpecsInventario"
     }
 }
 
@@ -223,8 +196,8 @@ if ($compiled.Count -gt 0) {
 # Exit code
 if ($failed.Count -eq 0) {
     Write-Host "✅ COMPILACIÓN COMPLETADA EXITOSAMENTE`n" -ForegroundColor Green
-    exit 0
+    Throw
 } else {
     Write-Host "⚠️  COMPILACIÓN COMPLETADA CON ERRORES`n" -ForegroundColor Yellow
-    exit 1
+    Throw
 }

@@ -28,7 +28,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIde
 if (-not $isAdmin) {
     Write-Host "❌ Este script requiere permisos de Administrador" -ForegroundColor Red
     Write-Host "   Click derecho → Ejecutar como Administrador`n" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
 
 # Crear directorio si no existe
@@ -133,5 +133,5 @@ try {
     Write-Host "`nSoluciones:" -ForegroundColor Yellow
     Write-Host "  - Ejecutar como Administrador" -ForegroundColor Yellow
     Write-Host "  - Cambiar el parámetro -Subject a otro nombre`n" -ForegroundColor Yellow
-    exit 1
+    Throw
 }
