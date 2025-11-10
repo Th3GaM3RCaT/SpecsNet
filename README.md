@@ -4,8 +4,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 
-Sistema cliente-servidor para Windows que recopila especificaciones de hardware/software de equipos en red, almacena la información en una base de datos SQLite y presenta una interfaz gráfica para visualización y gestión. **Filosofía: "Ejecutar y olvidarse"** - interfaz simple con 2 botones y modo tarea automático.
-
+Sistema cliente-servidor para Windows que recopila especificaciones de hardware/software de equipos en red, almacena la información en una base de datos SQLite y presenta una interfaz gráfica para visualización y gestión. 
 ---
 
 ## 📑 Índice
