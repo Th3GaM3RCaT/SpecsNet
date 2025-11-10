@@ -45,6 +45,10 @@ $pyinstallerArgs = @(
     "--add-data", "src/ui/*.ui;ui",
     "--hidden-import=wmi",
     "--hidden-import=psutil",
+    "--hidden-import=PySide6",
+    "--hidden-import=PySide6.QtWidgets",
+    "--hidden-import=PySide6.QtCore",
+    "--hidden-import=PySide6.QtGui",
     "--paths=src",
     "src/servidor.py"
 )

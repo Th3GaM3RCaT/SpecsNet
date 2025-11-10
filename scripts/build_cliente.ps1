@@ -46,6 +46,10 @@ $pyinstallerArgs = @(
     "--hidden-import=psutil",
     "--hidden-import=getmac",
     "--hidden-import=windows_tools.installed_software",
+    "--hidden-import=PySide6",
+    "--hidden-import=PySide6.QtWidgets",
+    "--hidden-import=PySide6.QtCore",
+    "--hidden-import=PySide6.QtGui",
     "--paths=src",
     "src/specs.py"
 )
