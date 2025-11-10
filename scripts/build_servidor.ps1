@@ -40,7 +40,7 @@ Write-Host "⚙️  Ejecutando PyInstaller..." -ForegroundColor Cyan
 $pyinstallerArgs = @(
     "--onedir",
     "--noconsole",
-    "--name", "SpecsServidor",
+    "--name", "SpecsNet - Servidor",
     "--add-data", "src/sql/statement/*.sql;sql/statement",
     "--add-data", "src/ui/*.ui;ui",
     "--hidden-import=wmi",
@@ -63,19 +63,19 @@ if (Test-Path "config/security_config.py") {
 pyinstaller @pyinstallerArgs
 
 # Verificar resultado
-if (Test-Path "dist/SpecsServidor/SpecsServidor.exe") {
+if (Test-Path "dist/SpecsNet - Servidor/SpecsNet - Servidor.exe") {
     $fileSize = (Get-Item "dist/SpecsServidor/SpecsServidor.exe").Length / 1MB
-    $folderSize = (Get-ChildItem "dist/SpecsServidor" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+    $folderSize = (Get-ChildItem "dist/SpecsNet - Servidor" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
     Write-Host ""
     Write-Host "✅ Compilación exitosa!" -ForegroundColor Green
-    Write-Host "   Ejecutable: dist/SpecsServidor/SpecsServidor.exe" -ForegroundColor Cyan
+    Write-Host "   Ejecutable: dist/SpecsNet - Servidor/SpecsNet - Servidor.exe" -ForegroundColor Cyan
     Write-Host "   Tamaño exe: $([math]::Round($fileSize, 2)) MB" -ForegroundColor Cyan
     Write-Host "   Tamaño total: $([math]::Round($folderSize, 2)) MB" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "🚀 Para ejecutar:" -ForegroundColor Yellow
-    Write-Host "   .\dist\SpecsServidor\SpecsServidor.exe" -ForegroundColor White
+    Write-Host "   .\dist\SpecsNet - Servidor\SpecsNet - Servidor.exe" -ForegroundColor White
     Write-Host ""
-    Write-Host "💡 Tip: Para distribuir, comprime toda la carpeta dist/SpecsServidor/" -ForegroundColor Cyan
+    Write-Host "💡 Tip: Para distribuir, comprime toda la carpeta dist/SpecsNet - Servidor/" -ForegroundColor Cyan
 } else {
     Write-Host ""
     Write-Host "❌ Error en la compilación" -ForegroundColor Red

@@ -40,7 +40,7 @@ Write-Host "⚙️  Ejecutando PyInstaller..." -ForegroundColor Cyan
 $pyinstallerArgs = @(
     "--onedir",
     "--noconsole",
-    "--name", "SpecsCliente",
+    "--name", "SpecsNet - Cliente",
     "--add-data", "src/ui/*.ui;ui",
     "--hidden-import=wmi",
     "--hidden-import=psutil",
@@ -64,20 +64,20 @@ if (Test-Path "config/security_config.py") {
 pyinstaller @pyinstallerArgs
 
 # Verificar resultado
-if (Test-Path "dist/SpecsCliente/SpecsCliente.exe") {
-    $fileSize = (Get-Item "dist/SpecsCliente/SpecsCliente.exe").Length / 1MB
-    $folderSize = (Get-ChildItem "dist/SpecsCliente" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+if (Test-Path "dist/SpecsNet - Cliente/SpecsNet - Cliente.exe") {
+    $fileSize = (Get-Item "dist/SpecsNet - Cliente/SpecsNet - Cliente.exe").Length / 1MB
+    $folderSize = (Get-ChildItem "dist/SpecsNet - Cliente" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
     Write-Host ""
     Write-Host "✅ Compilación exitosa!" -ForegroundColor Green
-    Write-Host "   Ejecutable: dist/SpecsCliente/SpecsCliente.exe" -ForegroundColor Cyan
+    Write-Host "   Ejecutable: dist/SpecsNet - Cliente/SpecsNet - Cliente.exe" -ForegroundColor Cyan
     Write-Host "   Tamaño exe: $([math]::Round($fileSize, 2)) MB" -ForegroundColor Cyan
     Write-Host "   Tamaño total: $([math]::Round($folderSize, 2)) MB" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "🚀 Para ejecutar:" -ForegroundColor Yellow
-    Write-Host "   GUI mode:   .\dist\SpecsCliente\SpecsCliente.exe" -ForegroundColor White
-    Write-Host "   Tarea mode: .\dist\SpecsCliente\SpecsCliente.exe --tarea" -ForegroundColor White
+    Write-Host "   GUI mode:   .\dist\SpecsNet - Cliente\SpecsCliente.exe" -ForegroundColor White
+    Write-Host "   Tarea mode: .\dist\SpecsNet - Cliente\SpecsNet - Cliente.exe --tarea" -ForegroundColor White
     Write-Host ""
-    Write-Host "💡 Tip: Para distribuir, comprime toda la carpeta dist/SpecsCliente/" -ForegroundColor Cyan
+    Write-Host "💡 Tip: Para distribuir, comprime toda la carpeta dist/SpecsNet - Cliente/" -ForegroundColor Cyan
 } else {
     Write-Host ""
     Write-Host "❌ Error en la compilación" -ForegroundColor Red
