@@ -41,6 +41,7 @@ $pyinstallerArgs = @(
     "--onedir",
     "--noconsole",
     "--name", "SpecsNet - Servidor",
+    "--add-data", "src/sql/specs.sql;sql",
     "--add-data", "src/sql/statement/*.sql;sql/statement",
     "--add-data", "src/ui/*.ui;ui",
     "--hidden-import=wmi",
@@ -64,7 +65,7 @@ pyinstaller @pyinstallerArgs
 
 # Verificar resultado
 if (Test-Path "dist/SpecsNet - Servidor/SpecsNet - Servidor.exe") {
-    $fileSize = (Get-Item "dist/SpecsServidor/SpecsServidor.exe").Length / 1MB
+    $fileSize = (Get-Item "dist/SpecsNet - Servidor/SpecsNet - Servidor.exe").Length / 1MB
     $folderSize = (Get-ChildItem "dist/SpecsNet - Servidor" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
     Write-Host ""
     Write-Host "✅ Compilación exitosa!" -ForegroundColor Green

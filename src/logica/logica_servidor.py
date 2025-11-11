@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 from logica.logica_Hilo import Hilo
 from sql import ejecutar_sql as sql
 from logica import optimized_block_scanner as scan
+from logica.ping_utils import ping_host
 
 # Importar configuración de seguridad
 from typing import Callable, Optional
@@ -940,7 +941,7 @@ def solicitar_datos_a_cliente(ip, timeout_seg=5):
         ping_result = subprocess.run(
             ['ping', '-n', '1', '-w', '1000', ip],
             capture_output=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
         
         if ping_result.returncode != 0:
@@ -986,14 +987,8 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
     async def ping_y_actualizar_dispositivo(ip, mac, index):
         """Hace ping y actualiza estado en DB"""
         try:
-            # Ping asíncrono con timeout de 1 segundo
-            proc = await asyncio.create_subprocess_exec(
-                "ping", "-n", "1", "-w", "1000", ip,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            returncode = await proc.wait()
-            activo = (returncode == 0)
+            # Usar utilitario centralizado de ping (timeout 1s)
+            activo = await ping_host(ip, 1.0)
             
             serial = None
             
@@ -1182,7 +1177,7 @@ def monitorear_dispositivos_periodicamente(intervalo_minutos=15, callback_progre
                     ping_result = subprocess.run(
                         ['ping', '-n', '1', '-w', '1000', ip],
                         capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                        creationflags=subprocess.CREATE_NO_WINDOW
                     )
                     
                     esta_activo = ping_result.returncode == 0

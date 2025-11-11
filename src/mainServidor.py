@@ -8,6 +8,8 @@ from sql.ejecutar_sql import cursor, abrir_consulta  # Funciones de DB
 import sql.ejecutar_sql as sql_mod
 from logica import logica_servidor as ls  # Importar lógica del servidor
 from logica.logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en background
+# Utilitario compartido de ping asíncrono (evitar duplicación)
+from logica.ping_utils import ping_host
 from typing import Optional
 
 class InventarioWindow(QMainWindow, Ui_MainWindow):
@@ -264,21 +266,18 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         
         def verificar_estados():
             async def ping_dispositivo(ip, row):
-                """Hace ping a un dispositivo y actualiza la UI"""
+                """Hace ping a un dispositivo y actualiza la UI.
+
+                Reusa `ping_host` del módulo compartido para evitar duplicación de
+                lógica entre el servidor y la UI.
+                """
                 try:
                     if not ip or ip == '-':
                         return (row, False, "sin_ip")
-                    
-                    # Ping con timeout de 1 segundo
-                    proc = await asyncio.create_subprocess_exec(
-                        "ping", "-n", "1", "-w", "1000", ip,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL
-                    )
-                    returncode = await proc.wait()
-                    conectado = (returncode == 0)
+
+                    conectado = await ping_host(ip, 1.0)
                     return (row, conectado, ip)
-                except Exception as e:
+                except Exception:
                     return (row, False, ip)
             
             async def verificar_todos():
