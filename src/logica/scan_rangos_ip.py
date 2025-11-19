@@ -1,63 +1,97 @@
+from ast import Return
+import ipaddress
 from re import compile
-reg_ex = compile(r'^(10)(\.1[0-1][0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[1-9]|0)){2}$')
+
+reg_ex = compile(
+    r"^(10)(\.1[0-1][0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[1-9]|0)){2}$"
+)
 romper = False
-def calculate_ip_range(ip_start = "10.100.0.0", ip_end = None):
+
+
+def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
+    """
+    Calcula el rango de IPs entre dos direcciones IP dadas.
+    Si la mascara es mayor a /16 advertir que puede tardar (hacer calculo de tiempo estimado realista)
+    Args:
+        ip_start (str): Dirección IP de inicio en formato decimal con puntos.
+        ip_end (str): Dirección IP de fin en formato decimal con puntos.
+    Returns:
+    """
     global romper
-    if not ip_end: ip_end = ip_start
+    if not ip_end:
+        ip_end = ip_start
     try:
         a = reg_ex.match(ip_start)
-        if not a:romper = True
-    except Exception:romper = True
-    
-    def last_oct(ip):    
-        sIp = ip[-3:]
-        if sIp[-3] == ".":      sIp = sIp[-2:]
-        elif sIp[-2] == ".":    sIp = sIp[-1:]
-        return int(sIp)
-    
-    last_oct_start = last_oct(ip_start)
-    last_oct_end = last_oct(ip_end)
-    last_oct_end-=last_oct_start
-    if not romper:return last_oct_end
-    else: return None
+        if not a:
+            romper = True
+            print("IP de inicio no válida")
+            return
+    except Exception:
+        romper = True
+        print("Error al validar IP de inicio")
+        return
 
-#hacer potencias de 2 hasta alcanzar el valor de extract_last_octet
-def potencia_de_2_hasta(valor):
-    print()
-    print ("="*20, "Cálculo de potencia de 2 para valor:", valor)
-    potencia = 0
-    resultado = 1
-    while resultado < valor:
-        resultado *= 2
-        potencia += 1
-    diferencia = valor - resultado
-    print("Potencia encontrada:", potencia)
-    potencia -=1
-    print("Potencia ajustada:", potencia)
-    print ("host:",2**potencia)
-    print("Diferencia:", diferencia)
-    
-    potencia = 32-potencia
-    print ("Máscara de subred sugerida:", potencia)
-    print ("="*20)
-    return potencia
+    def ip_to_binary_string(ip):
+        """
+        Convierte una IP en cadena binaria dividida en octetos.
+        Args:
+            ip (str): Dirección IP en formato decimal con puntos.
+        Returns:
+            tuple: (primer_octeto, segundo_octeto, tercer_octeto, cuarto_octeto
+        """
+        ip_int = int(ipaddress.ip_address(ip))  # Convierte IP a entero
+        binary_str = bin(ip_int)[2:].zfill(32)  # Quita '0b' y rellena a 32 bits
+        return binary_str
 
+    #   conversor a subredes
+    def calculate_network_mask(ip_bin_start, ip_bin_end, fIp=True):
+        ip_bin = int(ip_bin_end, 2) - int(ip_bin_start, 2)
+        print(ip_bin, "ip binaria restada")
 
+        def obtener_mascara(ip_bin):
+            potencia = 0
+            resultado = 1
+            while 2 ** (potencia + int(fIp)) < ip_bin:
+                resultado *= 2
+                potencia += 1
+            return potencia, resultado
 
+        potencia, resultado = obtener_mascara(ip_bin)
+        mascara = 32 - potencia
+        print("Máscara calculada:", mascara)
+
+        def Calcular_IP_base(ip_bin_start, mascara):
+            ip_start_int = int(ip_bin_start, 2)
+            block_size = 2 ** (32 - mascara)
+            base_int = (ip_start_int // block_size) * block_size
+            base_ip = ipaddress.ip_address(base_int)
+            subnet1 = ipaddress.ip_network(f"{base_ip}/{mascara}", strict=False)
+            return subnet1
+
+        ip_mask1 = Calcular_IP_base(ip_bin_start, mascara)
+        diferencia = ip_bin - resultado
+        print("Diferencia con potencia encontrada:", diferencia)
+        if diferencia > 0:
+            potencia, resultado = obtener_mascara(diferencia)
+            mascara = 32 - potencia
+        ip_mask2 = Calcular_IP_base(
+            ip_to_binary_string(ip_mask1.broadcast_address + 1), mascara
+        )
+        return ip_mask1, ip_mask2 if ip_mask2 else None
+
+    return calculate_network_mask(
+        ip_to_binary_string(ip_start), ip_to_binary_string(ip_end)
+    )
 
 
 if __name__ == "__main__":
-    while True:
-        try:
-            print("IP inicio: 10.100.2.10")
-            print("IP fin: 10.100.2.150")
-            remaining_last_octet = calculate_ip_range("10.100.2.10", "10.100.2.150")
-            print("restante del último octeto:", remaining_last_octet)
-            print(potencia_de_2_hasta(remaining_last_octet))
-            # todo: crear lista de subredes para rellenar cantidad restante
-            
-            input("Presione Enter para continuar...")
-            if romper: break
-        except Exception as e:
-            print("Error:", e)
-            break
+    try:
+        ip_inicio = "10.100.1.10"
+        ip_fin = "10.100.1.15"
+        print("IP inicio:", ip_inicio)
+        print("IP fin:", ip_fin)
+        remaining_last_octet = calculate_ip_range(ip_inicio, ip_fin)
+        print(remaining_last_octet, "IPs en el rango")
+        #TODO: reemplazar funcion en optimized_block_scanner por calculate_ip_range 
+    except Exception:
+        print("Error inesperado:", Exception)
