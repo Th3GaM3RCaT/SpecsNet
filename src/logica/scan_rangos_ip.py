@@ -1,4 +1,5 @@
 from ast import Return
+from email.mime import base
 import ipaddress
 from re import compile
 
@@ -16,6 +17,9 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
         ip_start (str): Dirección IP de inicio en formato decimal con puntos.
         ip_end (str): Dirección IP de fin en formato decimal con puntos.
     Returns:
+        tuple: (subred1, subred2) donde cada subred es un objeto ipaddress.IPv4Network.
+    Raises:
+        ValueError: Si las direcciones IP no son válidas.
     """
     global romper
     if not ip_end:
@@ -44,19 +48,19 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
         return binary_str
 
     #   conversor a subredes
-    def calculate_network_mask(ip_bin_start, ip_bin_end, fIp=True):
+    def calculate_network_mask(ip_bin_start, ip_bin_end):
         ip_bin = int(ip_bin_end, 2) - int(ip_bin_start, 2)
         print(ip_bin, "ip binaria restada")
 
         def obtener_mascara(ip_bin):
             potencia = 0
             resultado = 1
-            while 2 ** (potencia + int(fIp)) < ip_bin:
+            while 2 ** potencia < ip_bin:
                 resultado *= 2
                 potencia += 1
-            return potencia, resultado
+            return potencia
 
-        potencia, resultado = obtener_mascara(ip_bin)
+        potencia = obtener_mascara(ip_bin)
         mascara = 32 - potencia
         print("Máscara calculada:", mascara)
 
@@ -69,10 +73,12 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
             return subnet1
 
         ip_mask1 = Calcular_IP_base(ip_bin_start, mascara)
-        diferencia = ip_bin - resultado
-        print("Diferencia con potencia encontrada:", diferencia)
-        if diferencia > 0:
-            potencia, resultado = obtener_mascara(diferencia)
+        diferencia = int(ip_bin_end,2) - int(ip_to_binary_string(ip_mask1.compressed[:-3]),2)
+        
+        restante =  diferencia - ip_mask1.num_addresses
+        print("Diferencia con potencia encontrada:", restante)
+        if restante > 0:
+            potencia = obtener_mascara(restante)
             mascara = 32 - potencia
         ip_mask2 = Calcular_IP_base(
             ip_to_binary_string(ip_mask1.broadcast_address + 1), mascara
@@ -86,8 +92,8 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
 
 if __name__ == "__main__":
     try:
-        ip_inicio = "10.100.1.10"
-        ip_fin = "10.100.1.15"
+        ip_inicio = "10.100.1.100"
+        ip_fin = "10.100.2.12"
         print("IP inicio:", ip_inicio)
         print("IP fin:", ip_fin)
         remaining_last_octet = calculate_ip_range(ip_inicio, ip_fin)
