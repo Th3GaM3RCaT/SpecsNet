@@ -273,62 +273,6 @@ async def ping_sweep_chunked(network, chunk_size, per_host_timeout, per_subnet_t
 # Blocks are tuples (start_ip_inclusive, end_ip_inclusive) defined inside each /16.
 # We'll create ipaddress.ip_network objects for each block
 
-def generate_network_from_range(start_ip, end_ip=None):
-    """
-    Genera una ip_network que cubra el rango de start_ip a end_ip (o solo start_ip si end_ip es None).
-    Usa la máscara más pequeña posible que encierre el rango (potencia de 2).
-    
-    Args:
-        start_ip (str): IP de inicio (e.g., "10.100.10.50").
-        end_ip (str|None): IP de fin (e.g., "10.100.10.58"). Si None, solo start_ip.
-    
-    Returns:
-        ipaddress.ip_network: Red que cubre el rango.
-    
-    Raises:
-        ValueError: Si las IPs no son válidas o no están en la red privada.
-    """
-    start = ipaddress.ip_address(start_ip)
-    if end_ip:
-        end = ipaddress.ip_address(end_ip)
-        if int(end) < int(start):
-            end = start
-            raise ValueError("IP de fin debe ser mayor o igual a la de inicio")
-    else:
-        end = start
-    
-    # Verificar que estén en red privada
-    private_nets = [ipaddress.ip_network("10.0.0.0/8")]
-    in_private = any(start in net for net in private_nets)
-    if not in_private:
-        raise ValueError("IPs deben estar en red privada (10.0.0.0/8)")
-    
-    # Calcular número de IPs
-    num_ips = int(end) - int(start) + 1
-    
-    # Encontrar la potencia de 2 más cercana (mínimo 1, máximo 256 para /24)
-    import math
-    mask_size = 32 - math.ceil(math.log2(max(num_ips, 1)))
-    mask_size = max(20, min(32, mask_size))  # Limitar entre /20 y /32
-    
-    # Calcular IP base: la más baja múltiplo de 2^(32-mask) que cubra start
-    block_size = 2 ** (32 - mask_size)
-    start_int = int(start)
-    base_int = (start_int // block_size) * block_size
-    base_ip = ipaddress.ip_address(base_int)
-    
-    network = ipaddress.ip_network(f"{base_ip}/{mask_size}", strict=False)
-    
-    # Verificar que cubra el rango
-    if start not in network or end not in network:
-        # Si no cubre, aumentar la máscara (hacer red más grande)
-        mask_size -= 1
-        base_int = (start_int // (2 ** (32 - mask_size))) * (2 ** (32 - mask_size))
-        base_ip = ipaddress.ip_address(base_int)
-        network = ipaddress.ip_network(f"{base_ip}/{mask_size}", strict=False)
-    
-    return network
-
 
 
 # ------------------ SMALL HELPERS ------------------
@@ -358,52 +302,57 @@ async def scan_blocks(ranges, chunk_size, per_host_timeout, per_subnet_timeout, 
         
         # Generar red
         try:
-            network = generate_network_from_range(start_ip, end_ip)
-            print(f"  -> Red generada: {network}")
+            from scan_rangos_ip import calculate_ip_range
+            subnet1, subnet2 = calculate_ip_range(start_ip, end_ip) # type: ignore
+            subnets = [subnet1]
+            if subnet2:
+                subnets.append(subnet2)
         except ValueError as e:
             print(f"  [ERROR] Rango inválido {range_str}: {e}")
             continue
-        
-        # Emitir progreso al callback si existe
-        if callback_progreso:
-            try:
-                callback_progreso({
-                    'tipo': 'rango',
-                    'rango_actual': range_str,
-                    'rango_index': idx,
-                    'rangos_totales': total_ranges,
-                    'mensaje': f"Escaneando rango {idx}/{total_ranges}: {range_str} -> {network}"
-                })
-            except Exception as e:
-                print(f"[WARN] Error emitiendo progreso: {e}")
-        
-        # Probe by broadcast/multicast first (cheap)
-        found_ips = set()
-        if use_broadcast_probe:
-            try:
-                found_ips = await loop.run_in_executor(None, probe_block, network, None, probe_timeout, True)
-            except Exception:
-                found_ips = set()
-            if found_ips:
-                print(f"     probe found {len(found_ips)} hosts (examples: {list(found_ips)[:6]})")
-                all_alive.update(found_ips)
-        
-        # Hacer ping sweep en la red (complementa los probes)
-        num_hosts = network.num_addresses - 2
-        if num_hosts <= 0:
-            continue
-        # Saltar si el bloque es muy grande
-        if num_hosts > 4096:
-            print(f"     skipping sweep of {network} (too large: {num_hosts} hosts)")
-            continue
-        print(f"     doing chunked sweep of {network} ({num_hosts} hosts)")
-        alive = await ping_sweep_chunked(network, chunk_size=chunk_size, per_host_timeout=per_host_timeout,
-                                         per_subnet_timeout=per_subnet_timeout, concurrency=concurrency)
-        if alive:
-            print(f"     => {len(alive)} alive in network (examples: {alive[:6]})")
-            all_alive.update(alive)
-        else:
-            print("     => 0 alive in network")
+            
+        for sub_idx, network in enumerate(subnets):
+            print(f"  -> Subred {sub_idx+1}: {network}")
+            # Emitir progreso al callback si existe
+            if callback_progreso:
+                try:
+                    callback_progreso({
+                        'tipo': 'rango',
+                        'rango_actual': range_str,
+                        'rango_index': idx,
+                        'rangos_totales': total_ranges,
+                        'mensaje': f"Escaneando rango {idx}/{total_ranges}: {range_str} -> {network}"
+                    })
+                except Exception as e:
+                    print(f"[WARN] Error emitiendo progreso: {e}")
+            
+            # Probe by broadcast/multicast first (cheap)
+            found_ips = set()
+            if use_broadcast_probe:
+                try:
+                    found_ips = await loop.run_in_executor(None, probe_block, network, None, probe_timeout, True)
+                except Exception:
+                    found_ips = set()
+                if found_ips:
+                    print(f"     probe found {len(found_ips)} hosts (examples: {list(found_ips)[:6]})")
+                    all_alive.update(found_ips)
+            
+            # Hacer ping sweep en la red (complementa los probes)
+            num_hosts = network.num_addresses - 2
+            if num_hosts <= 0:
+                continue
+            # Saltar si el bloque es muy grande
+            if num_hosts > 4096:
+                print(f"     skipping sweep of {network} (too large: {num_hosts} hosts)")
+                continue
+            print(f"     doing chunked sweep of {network} ({num_hosts} hosts)")
+            alive = await ping_sweep_chunked(network, chunk_size=chunk_size, per_host_timeout=per_host_timeout,
+                                            per_subnet_timeout=per_subnet_timeout, concurrency=concurrency)
+            if alive:
+                print(f"     => {len(alive)} alive in network (examples: {alive[:6]})")
+                all_alive.update(alive)
+            else:
+                print("     => 0 alive in network")
 
     return sorted(all_alive, key=lambda s: tuple(int(x) for x in s.split(".")))
 
