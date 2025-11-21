@@ -90,6 +90,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
         # Mapa de IP a fila de tabla para actualización en tiempo real
         self.ip_to_row = {}
+        self.serials_encontrados = []
 
         # Conectar señales
         self.ui.tableDispositivos.itemSelectionChanged.connect(self.on_dispositivo_seleccionado)
@@ -193,20 +194,26 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.tableDispositivos.setColumnWidth(8, 85)   # Licencia
         # IP se estira automáticamente
     
-    def cargar_dispositivos(self, verificar_ping=True):
+    def cargar_dispositivos(self, verificar_ping=True, filtrar_serials=None):
         """Carga los dispositivos desde la base de datos y opcionalmente verifica estado con ping
         
         Args:
             verificar_ping (bool): Si False, carga estados desde tabla 'activo' sin hacer ping.
                                    Usar False después de escaneo completo para no sobrescribir estados.
+            filtrar_serials (list): Lista de serials a mostrar. Si None, muestra todos.
         """
         # Limpiar tabla
         self.ui.tableDispositivos.setRowCount(0)
         
         try:
             # Consultar dispositivos desde la DB
-            sql, params = abrir_consulta("Dispositivos-select.sql")
-            cursor.execute(sql, params)
+            if filtrar_serials:
+                placeholders = ','.join('?' * len(filtrar_serials))
+                sql_query = f"SELECT * FROM Dispositivos WHERE serial IN ({placeholders})"
+                cursor.execute(sql_query, filtrar_serials)
+            else:
+                sql, params = abrir_consulta("Dispositivos-select.sql")
+                cursor.execute(sql, params)
             dispositivos = cursor.fetchall()
             
             if not dispositivos:
@@ -397,7 +404,6 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             elif tipo == 'bloque':
                 mensaje = datos.get('mensaje', '')
                 self.ui.statusbar.showMessage(f"[ESCANEO] {mensaje}", 0)
-                # No imprimir en consola para evitar spam
                 return
             
             elif tipo == 'fase':
@@ -412,6 +418,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             activo = datos.get('activo')
             index = datos.get('index')
             total = datos.get('total')
+            serial = datos.get('serial')
+            if serial:
+                self.serials_encontrados.append(serial)
             
             # Actualizar barra de estado con progreso de consulta
             if index is not None and total is not None:
@@ -839,6 +848,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.statusbar.showMessage("Paso 1/4: Iniciando escaneo de red...", 0)
         self.ui.btnActualizar.setEnabled(False)
         
+        # Limpiar lista de serials encontrados para nuevo escaneo
+        self.serials_encontrados.clear()
+        
         # Detener timer de verificación automática durante escaneo
         if hasattr(self, 'timer_estados') and self.timer_estados:
             self.timer_estados.stop()
@@ -936,7 +948,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Actualizar status y recargar vista (equivalente a finalizar_escaneo_completo)
         self.ui.statusbar.showMessage(f">> Paso 4/4: Escaneo finalizado. Insertados: {inserted}. {activos}/{total} clientes respondieron", 5000)
         # Recargar tabla SIN verificar ping (estados ya actualizados por escaneo)
-        self.cargar_dispositivos(verificar_ping=False)
+        self.cargar_dispositivos(verificar_ping=False, filtrar_serials=self.serials_encontrados)
         self.ui.btnActualizar.setEnabled(True)
         
         # Reiniciar timer de verificación automática
@@ -1019,7 +1031,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         """Callback Paso 3 completado"""
         activos, total = resultado
         self.ui.statusbar.showMessage(f">> Paso 3/4: {activos}/{total} clientes respondieron - Actualizando vista...", 0)
-        # Paso 4: Recargar tabla
+        # Paso 4: Recargar tabla filtrando solo los encontrados
         self.finalizar_escaneo_completo()
     
     def on_consulta_error(self, error):
@@ -1030,8 +1042,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def finalizar_escaneo_completo(self):
         """Paso 4: Recargar tabla con datos actualizados"""
         print("\n=== Finalizando escaneo completo ===")
-        # Cargar dispositivos SIN verificar ping (ya se verificó en consultar_dispositivos_desde_csv)
-        self.cargar_dispositivos(verificar_ping=False)
+        self.cargar_dispositivos(verificar_ping=False, filtrar_serials=self.serials_encontrados)
         self.ui.statusbar.showMessage(">> Escaneo completo finalizado exitosamente", 5000)
         self.ui.btnActualizar.setEnabled(True)
         print(">> Proceso completado\n")
