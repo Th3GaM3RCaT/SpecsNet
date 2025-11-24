@@ -348,23 +348,6 @@ python src\logica\optimized_block_scanner.py --start 100 --end 100
    └─> UI recarga tabla con datos completos
        └─> Timer de 10s reanuda verificación automática
 ```
-```
-
-5. SERVIDOR procesa y almacena
-   ├─> Parsea JSON + DirectX
-   ├─> Extrae datos según esquema de DB
-   ├─> Inserta/actualiza en tablas:
-   │   ├─ Dispositivos (info principal)
-   │   ├─ activo (estado encendido/apagado)
-   │   ├─ memoria (módulos RAM)
-   │   ├─ almacenamiento (discos)
-   │   ├─ aplicaciones (software)
-   │   └─ informacion_diagnostico (reportes completos)
-   └─> Commit a SQLite
-
-6. INTERFAZ muestra datos actualizados
-   └─> Consulta DB y presenta en tabla con colores
-```
 
 ### Escaneo y Descubrimiento Masivo
 
