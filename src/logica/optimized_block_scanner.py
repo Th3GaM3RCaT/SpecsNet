@@ -33,7 +33,6 @@ from select import select as select_func
 from pathlib import Path
 from itertools import islice
 from logica.ping_utils import ping_host
-from logica.arp_utils import parse_arp_table
 from concurrent.futures import ThreadPoolExecutor, as_completed as futures_as_completed
 import ipaddress
 import time
@@ -83,7 +82,7 @@ except ImportError:
 
 DEFAULT_PER_HOST_TIMEOUT = 0.8
 DEFAULT_PER_SUBNET_TIMEOUT = 8.0
-DEFAULT_CONCURRENCY = 300
+DEFAULT_CONCURRENCY = 50  # Reducido de 300 para evitar sobrecarga del sistema con rangos grandes
 DEFAULT_PROBE_TIMEOUT = 0.9
 CSV_PREFIX = "optimized_scan"
 project_root = Path(__file__).parent.parent.parent
@@ -333,6 +332,35 @@ async def scan_blocks(
 
     total_ranges = len(ranges)
 
+    # Calcular tamaño total del escaneo para ajustar concurrencia dinámicamente
+    total_ips = 0
+    for range_str in ranges:
+        try:
+            if "-" in range_str:
+                start_ip, end_ip = range_str.split("-", 1)
+            else:
+                start_ip = end_ip = range_str
+            from logica.scan_rangos_ip import calculate_ip_range
+            subnet1, subnet2 = calculate_ip_range(start_ip, end_ip) # type: ignore
+            total_ips += subnet1.num_addresses
+            if subnet2:
+                total_ips += subnet2.num_addresses
+        except:
+            pass  # Ignorar errores de cálculo para este propósito
+
+    # Ajustar concurrencia basada en tamaño del rango para evitar sobrecarga
+    if total_ips > 500:  # Rangos muy grandes
+        adjusted_concurrency = min(concurrency, 25)  # Máximo 25 para rangos grandes
+        print(f"[OPTIMIZACION] Rango grande detectado ({total_ips} IPs). Concurrencia ajustada: {concurrency} -> {adjusted_concurrency}")
+        concurrency = adjusted_concurrency
+    elif total_ips > 100:  # Rangos medianos
+        adjusted_concurrency = min(concurrency, 50)  # Máximo 50 para rangos medianos
+        if adjusted_concurrency != concurrency:
+            print(f"[OPTIMIZACION] Rango mediano detectado ({total_ips} IPs). Concurrencia ajustada: {concurrency} -> {adjusted_concurrency}")
+            concurrency = adjusted_concurrency
+
+    print(f"[CONFIG] Concurrencia final: {concurrency} operaciones simultáneas")
+
     for idx, range_str in enumerate(ranges, start=1):
         print(f"\n--- Rango {idx}/{total_ranges}: {range_str} ---")
 
@@ -412,25 +440,6 @@ async def scan_blocks(
     return sorted(all_alive, key=lambda s: tuple(int(x) for x in s.split(".")))
 
 
-def merge_with_arp(alive_ips):
-    """
-    Asocia IPs con MACs de la tabla ARP.
-    Filtra IPs de equipos de red (routers, switches, APs) dejando solo computadoras.
-    """
-    arp = parse_arp_table()
-    arp_map = dict(arp)
-    out = []
-    for ip in sorted(alive_ips, key=lambda s: tuple(int(x) for x in s.split("."))):
-        mac = arp_map.get(ip)
-
-        # Filtrar equipos de red: solo incluir si es computadora o si no tiene MAC
-        if mac and not is_computer_mac(mac):
-            continue  # Salta routers, switches, APs
-
-        out.append((ip, mac))
-    return out
-
-
 def parse_args():
     p = argparse.ArgumentParser(
         description="Optimized block scanner for custom IP ranges."
@@ -454,286 +463,6 @@ def parse_args():
     )
     p.add_argument("--csv", action="store_true", help="save CSV (default: yes)")
     return p.parse_args()
-
-
-def is_computer_mac(mac):
-    """Determina si una MAC pertenece a un dispositivo tipo computadora."""
-    if not mac:
-        return False
-
-    # Extraer OUI (primeros 3 octetos)
-    oui = mac[:8].upper()  # Formato: XX:XX:XX
-    # OUIs de ROUTERS, SWITCHES y EQUIPOS DE RED (a descartar)
-    network_equipment = {
-        # Cisco
-        "00:00:0C",
-        "00:01:42",
-        "00:01:63",
-        "00:01:64",
-        "00:01:96",
-        "00:01:97",
-        "00:02:17",
-        "00:02:3D",
-        "00:02:4A",
-        "00:02:4B",
-        "00:02:7D",
-        "00:02:7E",
-        "00:02:B9",
-        "00:02:BA",
-        "00:02:FC",
-        # Ubiquiti (APs, routers)
-        "00:15:6D",
-        "00:27:22",
-        "04:18:D6",
-        "24:A4:3C",
-        "68:D7:9A",
-        "70:A7:41",
-        "74:83:C2",
-        "80:2A:A8",
-        "B4:FB:E4",
-        "DC:9F:DB",
-        # MikroTik
-        "00:0C:42",
-        "4C:5E:0C",
-        "6C:3B:6B",
-        "74:4D:28",
-        "D4:CA:6D",
-        # Huawei (routers)
-        "00:46:4B",
-        "00:66:4B",
-        "00:E0:FC",
-        "04:C0:6F",
-        "70:72:3C",
-        # ZTE (routers)
-        "00:19:CB",
-        "24:1F:A0",
-        "48:3B:38",
-        "6C:59:40",
-        "F8:E7:1E",
-        # D-Link (switches, routers)
-        "00:01:C0",
-        "00:05:5D",
-        "00:0D:88",
-        "00:11:95",
-        "00:13:46",
-        # Netgear (routers)
-        "00:09:5B",
-        "00:14:6C",
-        "00:1B:2F",
-        "00:1E:2A",
-        "00:26:F2",
-        # Linksys
-        "00:06:25",
-        "00:0C:41",
-        "00:0E:08",
-        "00:12:17",
-        "00:13:10",
-        # Aruba Networks (APs)
-        "00:0B:86",
-        "00:1A:1E",
-        "20:4C:03",
-        "24:DE:C6",
-        "70:3A:0E",
-        # Juniper Networks
-        "00:05:85",
-        "00:12:1E",
-        "00:19:E2",
-        "00:1F:12",
-        "00:21:59",
-        # HPE/Aruba switches
-        "E0:50:8B",
-        "A0:B3:CC",
-        "94:B4:0F",
-        # Fortinet (firewalls)
-        "00:09:0F",
-        "08:5B:0E",
-        "70:4C:A5",
-        "90:6C:AC",
-        # Sophos (firewalls)
-        "00:1A:8C",
-        "7C:5A:1C",
-        "00:30:BD",
-        # SonicWall (firewalls)
-        "00:06:B1",
-        "00:17:C5",
-        "00:1D:6A",
-        "C0:EA:E4",
-    }
-
-    # Primero verificar si es equipo de red (excluir)
-    if oui in network_equipment:
-        return False
-
-    # Si no está en ninguna lista, aplicar heurística:
-    # - Routers típicamente tienen MACs en rangos reservados o multicast
-    # - MACs que terminan en patrones específicos de red
-
-    # Descartar MACs multicast o broadcast
-    first_octet = int(mac[:2], 16)
-    if first_octet & 0x01:  # Bit multicast activado
-        return False
-
-    # Por defecto, si no sabemos, asumimos que SÍ es computadora
-    # (esto incluirá PCs genéricas/clones con NICs no identificados)
-    return True
-
-
-def update_csv_with_macs(
-    input_csv_path,
-    output_csv_path=None,
-    ping_missing=True,
-    ping_timeout=0.8,
-    workers=50,
-    overwrite=True,
-):
-    """
-    Lee CSV de entrada con IPs, intenta poblar MACs usando tabla ARP.
-    Opcionalmente hace ping a IPs sin MAC para poblar la tabla ARP.
-
-    Args:
-        input_csv_path (str): Path al CSV de entrada.
-        output_csv_path (str|None): Path de salida. Si None, crea "<input>_with_macs.csv"
-                                     o sobrescribe si overwrite=True.
-        ping_missing (bool): Si True, hace ping a IPs sin MAC antes de leer ARP.
-        ping_timeout (float): Timeout por ping en segundos.
-        workers (int): Concurrencia para pings.
-        overwrite (bool): Si True y output_csv_path es None, sobrescribe input file.
-
-    Returns:
-        dict: {'input': path, 'output': path, 'total_rows': n, 'mac_found': m, 'mac_missing': k}
-    """
-    if not os.path.isfile(input_csv_path):
-        raise FileNotFoundError(f"Input CSV not found: {input_csv_path}")
-
-    # 1) Leer CSV y detectar columnas
-    rows = []
-    with open(input_csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        fields = reader.fieldnames or []
-        lower_fields = [h.lower() for h in fields]
-
-        for r in reader:
-            row = {k: (v.strip() if v is not None else "") for k, v in r.items()}
-
-            # Buscar columna IP
-            ip = None
-            for candidate in ("ip", "address", "host"):
-                if candidate in lower_fields:
-                    ip = row[fields[lower_fields.index(candidate)]]
-                    break
-            if ip is None and len(fields) >= 2:
-                ip = row[fields[1]]
-
-            # Buscar columna MAC
-            mac = None
-            for candidate in ("mac", "ether", "hwaddr"):
-                if candidate in lower_fields:
-                    mac = row[fields[lower_fields.index(candidate)]]
-                    break
-            if mac is None and len(fields) >= 3:
-                mac = row[fields[2]]
-
-            rows.append({"raw": row, "ip": ip, "mac": (mac or "").strip()})
-
-    total = len(rows)
-
-    # 2) Identificar IPs sin MAC
-    missing_ips = [r["ip"] for r in rows if r["ip"] and (not r["mac"])]
-    missing_ips = list(dict.fromkeys(missing_ips))  # Dedupe preserve order
-    print(f"CSV rows: {total}, IPs missing MAC: {len(missing_ips)}")
-    ping_missing = False
-    # 3) Opcional: ping masivo concurrente para poblar ARP
-    if ping_missing and missing_ips:
-        print(
-            f"Pinging {len(missing_ips)} IPs (timeout={ping_timeout}s, workers={workers}) to populate ARP..."
-        )
-        with ThreadPoolExecutor(max_workers=min(workers, len(missing_ips))) as ex:
-            futures = {
-                ex.submit(_ping_ip_sync, ip, ping_timeout): ip for ip in missing_ips
-            }
-            for fut in futures_as_completed(futures):
-                ip = futures[fut]
-                try:
-                    ok = fut.result()
-                except Exception:
-                    ok = False
-        # Pequeña espera para que la tabla ARP se actualice
-        time.sleep(0.5)
-
-    # 4) Re-parsear tabla ARP
-    try:
-        arp_entries = parse_arp_table()
-    except Exception as e:
-        print(f"Warning: parse_arp_table() falló: {e}")
-        arp_entries = []
-
-    arp_map = {ip: mac.lower() for ip, mac in arp_entries if mac}
-
-    # 5) Actualizar filas con MACs si están ahora en arp_map
-    updated = 0
-    still_missing = 0
-    for r in rows:
-        ip = r["ip"]
-        if not ip:
-            continue
-        if r["mac"]:
-            continue  # Ya tenía MAC
-        mac = arp_map.get(ip)
-        if mac:
-            r["mac"] = mac
-            updated += 1
-        else:
-            still_missing += 1
-
-    print(f"MACs found by ARP: {updated}, still missing: {still_missing}")
-
-    # 6) Escribir CSV de salida
-    if output_csv_path is None:
-        if overwrite:
-            output_csv_path = input_csv_path
-        else:
-            base, ext = os.path.splitext(input_csv_path)
-            output_csv_path = f"{base}_with_macs{ext}"
-
-    # Construir header: conservar campos originales, asegurar columna 'mac'
-    orig_fieldnames: list[str] = list(fields) if fields else ["ip", "mac"]
-    low = [h.lower() for h in orig_fieldnames]
-    if "mac" not in low:
-        orig_fieldnames.append("mac")
-
-    with open(output_csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=orig_fieldnames)
-        writer.writeheader()
-        for r in rows:
-            outrow = {}
-            # Llenar valores originales
-            for h in orig_fieldnames:
-                if h in r["raw"]:
-                    outrow[h] = r["raw"].get(h, "")
-                else:
-                    # Match case-insensitive
-                    for k in r["raw"]:
-                        if k.lower() == h.lower():
-                            outrow[h] = r["raw"].get(k, "")
-                            break
-                    else:
-                        outrow[h] = ""
-
-            # Asegurar campo 'mac' actualizado
-            for idx, name in enumerate(orig_fieldnames):
-                if name.lower() == "mac":
-                    outrow[name] = r.get("mac") or ""
-                    break
-
-            writer.writerow(outrow)
-
-    return {
-        "input": input_csv_path,
-        "output": output_csv_path,
-        "total_rows": total,
-        "mac_found": updated,
-        "mac_missing": still_missing,
-    }
 
 
 def _ping_ip_sync(ip: str, timeout: float = 1.0) -> bool:
@@ -821,24 +550,24 @@ def main(callback_progreso=None):
         except Exception:
             pass
 
-    merged = merge_with_arp(alive)
+    print(f"[DEBUG] Escaneo completado: {len(alive)} IPs vivas encontradas")
 
-    # Estadísticas de filtrado
-    filtered_count = len(alive) - len(merged)
-    if filtered_count > 0:
-        print(
-            f"[FILTRADO] Excluidas {filtered_count} IPs de equipos de red (routers, switches, APs)"
-        )
-        print(f"[RESULTADO] {len(merged)} IPs de computadoras para CSV")
+    # No hacer merge_with_arp - el servidor no obtiene MACs, solo IPs
+    # Los clientes enviarán sus MACs cuando se conecten
+    merged = [(ip, "unknown") for ip in alive]  # Tuplas (IP, MAC) con MAC="unknown"
+    print(f"[DEBUG] Retornando {len(merged)} IPs sin lookup de MAC")
 
-    # Notificar filtrado
+    # Estadísticas
+    print(f"[RESULTADO] {len(merged)} IPs activas encontradas (MACs serán enviadas por clientes)")
+
+    # Notificar resultado final
     if callback_progreso:
         try:
             callback_progreso(
                 {
                     "tipo": "fase",
-                    "fase": "filtrado_completado",
-                    "mensaje": f"Filtrado: {len(merged)} computadoras ({filtered_count} equipos de red excluidos)",
+                    "fase": "escaneo_completado",
+                    "mensaje": f"Escaneo completado: {len(merged)} IPs encontradas",
                 }
             )
         except Exception:
@@ -904,25 +633,15 @@ def main(callback_progreso=None):
         except Exception:
             pass
 
-    # 5. Usar update_csv_with_macs para poblar MACs eficientemente
+    # 5. Copiar CSV sin poblar MACs (los clientes enviarán sus MACs)
     try:
-        result = update_csv_with_macs(
-            input_csv_path=temp_csv,
-            output_csv_path=CSV_FILENAME,
-            ping_missing=True,
-            ping_timeout=0.8,
-            workers=50,
-            overwrite=False,
-        )
-
-        print(f"[OK] CSV actualizado: '{CSV_FILENAME}'")
-        print(f"   - Total dispositivos: {result['total_rows']}")
-        print(f"   - MACs encontradas: {result['mac_found']}")
-        print(f"   - Sin MAC: {result['mac_missing']}")
-        print(f"   - Nuevas computadoras en este escaneo: {len(merged)}")
+        import shutil
+        shutil.copy2(temp_csv, CSV_FILENAME)
+        print(f"[OK] CSV guardado: '{CSV_FILENAME}' con {len(merged)} dispositivos")
+        print("   - MACs serán enviadas por los clientes al conectarse")
 
     except Exception as e:
-        print(f"Error poblando MACs: {e}")
+        print(f"Error guardando CSV: {e}")
         # Fallback: copiar temp_csv como resultado
         import shutil
 

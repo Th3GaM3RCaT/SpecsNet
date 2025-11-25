@@ -332,7 +332,7 @@ def main():
     raw = parse_arp_table()
     kept, discarded = filter_entries(raw, network)
 
-    csv_name = OUTPUT_DIR / f"scan_clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    csv_name = OUTPUT_DIR / f"lista_definitiva.csv"
     try:
         with open(csv_name, "w", newline="") as f:
             w = csv.writer(f)

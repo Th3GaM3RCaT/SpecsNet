@@ -47,7 +47,7 @@ async def ping_host(host: str, per_host_timeout: float) -> bool:
     """
     try:
         return await wait_for(
-            ping_one_cmd(host, per_host_timeout), timeout=per_host_timeout + 0.5
+            ping_one_cmd(host, per_host_timeout), timeout=per_host_timeout
         )
     except Exception:
         return False

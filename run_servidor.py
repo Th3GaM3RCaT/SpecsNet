@@ -18,5 +18,6 @@ if __name__ == "__main__":
 
     os.chdir(src_dir)
 
-    # Importar servidor como módulo
+    # Importar servidor como módulo y ejecutar main()
     import mainServidor
+    mainServidor.main()

@@ -1,9 +1,7 @@
 import ipaddress
 from re import compile
 
-reg_ex = compile(
-    r"^(10)(\.1[0-1][0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[1-9]|0)){2}$"
-)
+
 romper = False
 
 
@@ -19,10 +17,11 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
     Raises:
         ValueError: Si las direcciones IP no son válidas.
     """
+    reg_ex = compile(r"^(10)(\.1[0-1][0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[1-9]|0)){2}$")
     global romper
     if not ip_start: return
     if not ip_end:
-        ip_end = ip_start
+        ip_end = ip_start [:-1] + str(int(ip_start[-1])+3)
     try:
         a = reg_ex.match(ip_start)
         if not a:

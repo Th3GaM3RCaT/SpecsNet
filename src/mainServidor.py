@@ -87,10 +87,10 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Hilos para operaciones de red
         self.hilo_servidor = None
         self.hilo_escaneo = None
-        self.hilo_escaneo_rangos = None
+        self.hilo_escaneo_rangos = None        
         self.hilo_consulta = None
-
-        # Ruta del último CSV generado por Scanner (si aplica)
+        self.hilo_procesamiento = None
+        self.procesamiento_en_curso = False        # Ruta del último CSV generado por Scanner (si aplica)
         self._last_csv = None
 
         # Facade server manager (puede ser None si no se pudo instanciar)
@@ -134,7 +134,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Timer para verificación automática de estados cada 10 segundos
         self.timer_estados = QtCore.QTimer(self)
         self.timer_estados.timeout.connect(self.verificar_estados_automatico)
-        self.timer_estados.start(10000)  # 10 segundos
+        self.timer_estados.start(20000)  # 20 segundos
 
     def cargar_datos_iniciales(self):
         """Carga datos de la DB. Si no hay datos, inicia actualización automática."""
@@ -185,6 +185,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 ls.main()
 
         self.hilo_servidor = Hilo(iniciar_tcp)
+        self.hilo_servidor.error.connect(self.on_servidor_error)
         self.hilo_servidor.start()
         self.ui.statusbar.showMessage(
             ">> Servidor iniciado - Esperando conexiones de clientes", 3000
@@ -376,7 +377,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                     if not ip or ip == "-":
                         return (row, False, "sin_ip")
 
-                    conectado = await ping_host(ip, 1.0)
+                    conectado = await ping_host(ip, 0.5)
                     return (row, conectado, ip)
                 except Exception:
                     return (row, False, ip)
@@ -405,11 +406,17 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             try:
                 resultados = loop.run_until_complete(verificar_todos())
                 return resultados
+            except Exception as e:
+                print(f"Error en verificación de estados: {e}")
+                loop.close()
+                return []
             finally:
+                print(">> Verificación de estados finalizada")
                 loop.close()
 
         # Ejecutar en hilo separado
         def callback_estados(resultados):
+            print(">> Actualizando estados en UI...")
             # Actualizar UI con resultados (estamos en el thread principal)
             for resultado in resultados:
                 if isinstance(resultado, tuple):
@@ -681,6 +688,102 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.labelContador.setText(
             f"Mostrando {visible_count} dispositivos encontrados"
         )
+
+    def procesar_ips_encontradas_async(self, ips_list):
+        """Procesa las IPs encontradas en la DB de forma asíncrona para evitar bloquear la UI"""
+
+        # Evitar múltiples procesamientos simultáneos
+        if self.procesamiento_en_curso:
+            print(">> Ya hay un procesamiento de DB en curso, esperando...")
+            return
+
+        self.procesamiento_en_curso = True
+
+        def procesar_en_lotes(ips_list, callback_progreso=None):
+            """Procesa las IPs en lotes para mostrar progreso"""
+            total = len(ips_list)
+            procesadas = 0
+
+            try:
+                for i in range(0, total, 10):  # Procesar en lotes de 10
+                    lote = ips_list[i:i+10]
+
+                    for ip in lote:
+                        # Verificar si ya existe en DB
+                        sql, params = abrir_consulta("Dispositivos-select.sql", {"ip": ip})
+                        cursor.execute(sql, params)
+                        if not cursor.fetchone():
+                            # Crear serial temporal único
+                            serial_temp = f"TEMP_IP_{ip.replace('.', '_')}"
+                            info_basico = (
+                                serial_temp, 0, "", "", "", "", "", "", 0, "", ip, 1
+                            )
+                            setDevice(info_basico)
+
+                        procesadas += 1
+
+                        # Reportar progreso cada 10 IPs
+                        if callback_progreso and procesadas % 10 == 0:
+                            callback_progreso({
+                                'tipo': 'procesamiento_db',
+                                'procesadas': procesadas,
+                                'total': total,
+                                'mensaje': f"Procesando DB: {procesadas}/{total} IPs"
+                            })
+
+                    # Pequeña pausa para no bloquear completamente
+                    import time
+                    time.sleep(0.01)
+
+                return total
+
+            except Exception as e:
+                print(f"Error procesando lote de IPs: {e}")
+                connection.rollback()
+                return 0
+
+        # Usar HiloConProgreso para procesar sin bloquear UI
+        self.hilo_procesamiento = HiloConProgreso(procesar_en_lotes, ips_list)
+        self.hilo_procesamiento.progreso.connect(self.on_procesamiento_progreso)
+        self.hilo_procesamiento.terminado.connect(
+            lambda resultado: self.on_procesamiento_terminado(resultado, ips_list)
+        )
+        self.hilo_procesamiento.error.connect(self.on_procesamiento_error)
+        self.hilo_procesamiento.start()
+
+        self.ui.statusbar.showMessage("Procesando IPs encontradas en base de datos...", 0)
+
+    def on_procesamiento_progreso(self, datos):
+        """Muestra progreso del procesamiento de DB"""
+        if datos.get('tipo') == 'procesamiento_db':
+            procesadas = datos.get('procesadas', 0)
+            total = datos.get('total', 0)
+            mensaje = datos.get('mensaje', '')
+            self.ui.statusbar.showMessage(mensaje, 0)
+            print(f">> {mensaje}")
+
+    def on_procesamiento_terminado(self, resultado, ips_list):
+        """Finaliza procesamiento de IPs"""
+        self.procesamiento_en_curso = False  # Resetear flag
+        
+        if resultado > 0:
+            print(f">> Procesadas {resultado} IPs en DB")
+            self.ui.statusbar.showMessage(f"DB actualizada con {resultado} nuevas IPs", 3000)
+
+            # Recargar tabla con datos actualizados (sin ping para no demorar más)
+            self.cargar_dispositivos(verificar_ping=False)
+
+            # Filtrar para mostrar solo las IPs encontradas
+            self.filtrar_por_ips(ips_list)
+        else:
+            self.ui.statusbar.showMessage("Error procesando IPs en DB", 5000)
+
+    def on_procesamiento_error(self, error):
+        """Error en procesamiento de DB"""
+        self.procesamiento_en_curso = False  # Resetear flag en error también
+        
+        self.ui.statusbar.showMessage(f"Error procesando DB: {error}", 5000)
+        print(f"Error en procesamiento de DB: {error}")
 
     def ver_diagnostico(self):
         """Abre ventana de diagnóstico completo"""
@@ -1005,103 +1108,39 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
     def iniciar_escaneo_completo(self):
         """
-        Flujo completo:
-        1. Escanear red con optimized_block_scanner.py
-        2. Poblar DB inicial con IPs/MACs del CSV
-        3. Solicitar datos completos a cada cliente
-        4. Actualizar tabla
+        Recarga la tabla de dispositivos desde la base de datos.
+        El servidor ya no hace escaneos - espera conexiones de clientes.
         """
-        self.ui.statusbar.showMessage("Paso 1/4: Iniciando escaneo de red...", 0)
+        self.ui.statusbar.showMessage("Recargando lista de dispositivos...", 0)
         self.ui.btnActualizar.setEnabled(False)
 
-        # Limpiar lista de serials encontrados para nuevo escaneo
+        # Limpiar lista de serials encontrados
         self.serials_encontrados.clear()
 
-        # Detener timer de verificación automática durante escaneo
+        # Detener timer de verificación automática durante la recarga
         if hasattr(self, "timer_estados") and self.timer_estados:
             self.timer_estados.stop()
 
-        # Si existe ServerManager, delegar todo el flujo a run_full_scan
-        if hasattr(self, "server_mgr") and self.server_mgr:
-
-            def callback_full(callback_progreso=None):
-                try:
-                    print("\n=== Ejecutando run_full_scan via ServerManager ===")
-                    mgr = self.server_mgr
-                    if not mgr:
-                        return (0, 0, 0, None)
-                    inserted, activos, total, csv_path = mgr.run_full_scan(
-                        callback_progreso=callback_progreso
-                    )
-                    return (inserted, activos, total, csv_path)
-                except Exception as e:
-                    print(f"Exception en run_full_scan wrapper: {e}")
-                    import traceback
-
-                    traceback.print_exc()
-                    return (0, 0, 0, None)
-
-            # Usar HiloConProgreso para recibir actualizaciones en tiempo real
-            self.hilo_escaneo = HiloConProgreso(callback_full)
-            self.hilo_escaneo.progreso.connect(self.on_consulta_progreso)
-            self.hilo_escaneo.terminado.connect(self.on_full_scan_terminado)
-            self.hilo_escaneo.error.connect(self.on_escaneo_error)
-            self.hilo_escaneo.start()
-            return
-
-        # Fallback: flujo antiguo si no hay ServerManager
-        self.ejecutar_escaneo_red()
-
-    def ejecutar_escaneo_red(self):
-        """Paso 1: Ejecuta optimized_block_scanner.py"""
-
-        def callback_escaneo():
-            try:
-                print("\n=== Ejecutando escaneo de red (Scanner facade) ===")
-                scanner = ls.Scanner()
-
-                # Ejecutar el escaneo; run_scan devuelve la ruta al CSV generado
-                csv_path = scanner.run_scan()
-                print(f">> Escaneo completado, CSV: {csv_path}")
-
-                # Guardar ruta para uso posterior (poblar DB)
-                self._last_csv = csv_path
-                return True
-
-            except Exception as e:
-                print(f">> Excepción en escaneo: {e}")
-                import traceback
-
-                traceback.print_exc()
-                return False
-
-        self.hilo_escaneo = Hilo(callback_escaneo)
-        self.hilo_escaneo.terminado.connect(self.on_escaneo_terminado)
-        self.hilo_escaneo.error.connect(self.on_escaneo_error)
-        self.hilo_escaneo.start()
-
-    def on_escaneo_terminado(self, resultado):
-        """Callback Paso 1 completado"""
-        if resultado:
-            self.ui.statusbar.showMessage(
-                ">> Paso 1/4: Escaneo completado - Poblando DB inicial...", 0
-            )
-            # Paso 2: Poblar DB con CSV
-            self.poblar_db_desde_csv()
-        else:
-            self.ui.statusbar.showMessage("ERROR: Error en escaneo de red", 5000)
+        # Simplemente recargar la tabla desde DB
+        try:
+            self.cargar_dispositivos(verificar_ping=False)
+            self.ui.statusbar.showMessage("Lista de dispositivos actualizada", 3000)
+        except Exception as e:
+            self.ui.statusbar.showMessage(f"Error al recargar dispositivos: {e}", 5000)
+        finally:
             self.ui.btnActualizar.setEnabled(True)
-            # Reiniciar timer en caso de error
-            if hasattr(self, "timer_estados") and self.timer_estados:
-                self.timer_estados.start(10000)
 
-    def on_escaneo_error(self, error):
-        """Error en Paso 1"""
-        self.ui.statusbar.showMessage(f"ERROR: Error en escaneo: {error}", 5000)
-        self.ui.btnActualizar.setEnabled(True)
-        # Reiniciar timer en caso de error
-        if hasattr(self, "timer_estados") and self.timer_estados:
-            self.timer_estados.start(10000)
+            # Reiniciar timer de verificación automática
+            if hasattr(self, "timer_estados") and self.timer_estados:
+                self.timer_estados.start()
+
+    def on_servidor_error(self, error):
+        """Error en el hilo del servidor TCP"""
+        self.ui.statusbar.showMessage(f"ERROR: Error en servidor TCP: {error}", 5000)
+        print(f"[ERROR] Servidor TCP falló: {error}")
+        """Error en el hilo del servidor TCP"""
+        self.ui.statusbar.showMessage(f"ERROR: Error en servidor TCP: {error}", 5000)
+        print(f"[ERROR] Servidor TCP falló: {error}")
 
     def on_full_scan_terminado(self, resultado):
         """Handler para cuando ServerManager.run_full_scan finaliza.
@@ -1134,7 +1173,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
         # Reiniciar timer de verificación automática
         if hasattr(self, "timer_estados") and self.timer_estados:
-            self.timer_estados.start(10000)
+            self.timer_estados.start(20000)
 
     def poblar_db_desde_csv(self):
         """Paso 2: Lee CSV y crea registros básicos en DB (solo IP/MAC)"""
@@ -1296,46 +1335,8 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 )
 
                 if resultado:
-                    # Poblar DB con registros básicos para IPs encontradas que no existan
-                    try:
-                        for ip in resultado:
-                            print(f">> Procesando IP para DB: {ip}")
-                            # Usar función prehecha para consultar si existe
-                            sql, params = abrir_consulta(
-                                "Dispositivos-select.sql", {"ip": ip}
-                            )
-                            cursor.execute(sql, params)
-                            if not cursor.fetchone():
-                                # Crear serial temporal único
-                                serial_temp = f"TEMP_IP_{ip.replace('.', '_')}"
-                                # Usar función prehecha para insertar dispositivo básico
-                                info_basico = (
-                                    serial_temp,
-                                    0,
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    0,
-                                    "",
-                                    ip,
-                                    1,
-                                )
-                                setDevice(info_basico)
-                        print(
-                            f">> Poblada DB con registros básicos para {len(resultado)} IPs nuevas"
-                        )
-                    except Exception as e:
-                        print(f">> Error poblando DB: {e}")
-                        connection.rollback()  # Revertir cambios en caso de error
-
-                    # Recargar tabla con datos actualizados
-                    self.cargar_dispositivos(verificar_ping=False)
-
-                    # Filtrar para mostrar solo las IPs encontradas
-                    self.filtrar_por_ips(resultado)
+                    # Procesar IPs encontradas de forma asíncrona para evitar bloquear UI
+                    self.procesar_ips_encontradas_async(resultado)
 
                 else:
                     print("Escaneo Completado", "No se encontraron IPs activas.")
@@ -1350,11 +1351,13 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.hilo_escaneo_rangos.start()
         print(">> Hilo de escaneo iniciado.")
 
+def main():
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
 
-app = QtWidgets.QApplication.instance()
-if app is None:
-    app = QtWidgets.QApplication(sys.argv)
-
-window = InventarioWindow()
-window.show()
-sys.exit(app.exec())
+    window = InventarioWindow()
+    window.show()
+    sys.exit(app.exec())
+if __name__ == "__main__":
+    main()

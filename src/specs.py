@@ -151,6 +151,9 @@ else:
             from datos.informeDirectX import get_from_inform
 
             self.hilo_infDirectX = Hilo(get_from_inform)
+            self.hilo_infDirectX.terminado.connect(
+                lambda: self.statusbar.showMessage("DirectX info collected", 2000)
+            )
             self.hilo_infDirectX.error.connect(
                 lambda e: self.statusbar.showMessage(f"Error: {e}")
             )

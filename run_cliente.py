@@ -18,5 +18,6 @@ if __name__ == "__main__":
 
     os.chdir(src_dir)
 
-    # Importar specs como módulo
+    # Importar specs como módulo y ejecutar main()
     import specs
+    specs.main()

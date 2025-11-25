@@ -11,7 +11,6 @@ import asyncio
 
 from PySide6.QtWidgets import QApplication
 from sql import ejecutar_sql as sql
-from logica import optimized_block_scanner as scan
 from logica.ping_utils import ping_host
 from logica.async_utils import run_async
 
@@ -813,7 +812,7 @@ def main():
         while True:
             conn, addr = server_socket.accept()
             clientes.append(conn)
-            hilo = Thread(target=consultar_informacion, args=(conn, addr))
+            hilo = Thread(target=consultar_informacion, args=(conn, addr), daemon=True)
             hilo.start()
     except KeyboardInterrupt:
         print("\n[OK] Servidor detenido por usuario")
