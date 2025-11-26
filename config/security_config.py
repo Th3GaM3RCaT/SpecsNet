@@ -64,7 +64,7 @@ PING_TIMEOUT = float(os.getenv("PING_TIMEOUT", "1.0"))
 SCAN_PER_HOST_TIMEOUT = float(os.getenv("SCAN_PER_HOST_TIMEOUT", "0.8"))
 SCAN_PER_SUBNET_TIMEOUT = float(os.getenv("SCAN_PER_SUBNET_TIMEOUT", "8.0"))
 SCAN_PROBE_TIMEOUT = float(os.getenv("SCAN_PROBE_TIMEOUT", "0.9"))
-PING_BATCH_SIZE = int(os.getenv("PING_BATCH_SIZE", "50"))
+PING_BATCH_SIZE = int(os.getenv("PING_BATCH_SIZE", "20"))
 
 
 def generate_auth_token(secret: str | None = None) -> str:

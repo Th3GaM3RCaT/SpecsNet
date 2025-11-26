@@ -121,50 +121,6 @@ class ServerManager:
             print(f"[ServerManager] Error al iniciar servidor TCP: {e}")
             raise
 
-    def run_full_scan(
-        self,
-        start: int = 100,
-        end: int = 119,
-        use_broadcast_probe: bool = True,
-        callback_progreso=None,
-    ):
-        """Ejecuta el flujo completo de escaneo → poblar DB → consultar.
-
-        Args:
-            start,end: parámetros para el scanner (bloque de subnets)
-            use_broadcast_probe: pasar al scanner si corresponde
-            callback_progreso: función opcional que será llamada con diccionarios
-                de progreso durante el escaneo Y la consulta de dispositivos.
-
-        Retorna:
-            Tupla (inserted, activos, total, csv_path)
-        """
-        inserted = 0
-        activos = 0
-        total = 0
-        csv_path = None
-
-        try:
-            # Paso 1: escanear red (con progreso)
-            scanner = Scanner()
-            csv_path = scanner.run_scan(callback_progreso=callback_progreso)
-
-            # Paso 2: poblar DB desde CSV
-            inserted = scanner.parse_csv_to_db(csv_path)
-
-            # Paso 3: consultar dispositivos desde CSV (Monitor) usando callback_progreso
-            monitor = Monitor()
-            activos, total = monitor.query_all_from_csv(csv_path, callback_progreso)
-
-        except Exception as e:
-            print(f"[ServerManager] Error en run_full_scan: {e}")
-            import traceback
-
-            traceback.print_exc()
-
-        return (inserted, activos, total, csv_path)
-
-
 class Monitor:
     """Encapsula funciones de verificación/consulta de dispositivos.
 
@@ -200,7 +156,7 @@ class Scanner:
         `discovered_devices.csv` en la raíz o en `output/`.
         """
         print("=== Iniciando escaneo de red ===")
-        scan.main(callback_progreso=callback_progreso)
+        #scan.main(callback_progreso=callback_progreso)
         # Determinar CSV generado
         project_root = Path(__file__).parent.parent.parent
         output_dir = project_root / "output"
@@ -821,27 +777,6 @@ def main():
         print(f"[ERROR] Error en servidor: {e}")
         server_socket.close()
 
-
-# FUNCIONES DE BROADCAST ELIMINADAS
-# El servidor ahora solicita datos directamente a los clientes vía TCP
-# sin usar broadcasts/discovery UDP
-
-
-def abrir_json(position=0):
-    if archivos_json:
-        nombre_archivo = archivos_json[position]
-        try:
-            # Abre y lee el archivo JSON
-            with open(nombre_archivo, "r", encoding="utf-8") as f:
-                # Carga el contenido JSON en una estructura de Python
-                datos = load(f)
-                return datos
-        except FileNotFoundError:
-            print(f"Error: El archivo {nombre_archivo} no se encontró.")
-        except JSONDecodeError:
-            print(f"Error: El archivo {nombre_archivo} no es un JSON válido.")
-
-
 def cargar_ips_desde_csv(archivo_csv=None):
     """
     Carga lista de IPs desde archivo CSV generado por optimized_block_scanner.py
@@ -913,46 +848,6 @@ def cargar_ips_desde_csv(archivo_csv=None):
     except Exception as e:
         print(f"Error leyendo CSV: {e}")
         return []
-
-
-def solicitar_datos_a_cliente(ip, timeout_seg=5):
-    """
-    Solicita datos a un cliente específico por IP.
-
-    Args:
-        ip: IP del cliente
-        timeout_seg: Timeout en segundos
-
-    Returns:
-        True si el cliente respondió, False si no
-    """
-    try:
-        # Primero hacer ping para verificar si está activo
-        import subprocess
-
-        ping_result = subprocess.run(
-            ["ping", "-n", "1", "-w", "1000", ip],
-            capture_output=True,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-
-        if ping_result.returncode != 0:
-            print(f"  {ip}: No responde a ping")
-            return False
-
-        # Enviar broadcast dirigido (el cliente debe estar escuchando puerto 37020)
-        # Nota: El cliente debe estar en modo --tarea para responder
-        print(f"  {ip}: Activo, solicitando datos...")
-
-        # Aquí podríamos implementar un protocolo más sofisticado
-        # Por ahora, el servidor anuncia y espera que los clientes se conecten
-
-        return True
-
-    except Exception as e:
-        print(f"  {ip}: Error - {e}")
-        return False
-
 
 async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
     """Solicita especificaciones a un cliente específico mediante GET_SPECS (ASÍNCRONO).
@@ -1268,29 +1163,6 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
     print(f"\n=== Consulta finalizada: {activos}/{total} dispositivos activos ===\n")
     return activos, total
 
-
-def buscar_dispositivo():
-    """DEPRECATED - Función legacy que usaba broadcasts (ya no necesaria)."""
-    print("[WARN] buscar_dispositivo() deprecated - broadcasts eliminados")
-    pass
-
-
-def iniciar_escaneo_y_consulta(archivo_csv=None):
-    """
-    Función principal que ejecuta el escaneo de red y consulta dispositivos.
-    Se puede llamar desde la UI.
-    """
-    # Primero cargar IPs
-    ips_macs = cargar_ips_desde_csv(archivo_csv)
-
-    if not ips_macs:
-        print("No hay IPs para consultar")
-        return
-
-    # Consultar dispositivos directamente (sin broadcasts)
-    consultar_dispositivos_desde_csv(archivo_csv)
-
-
 def obtener_dispositivos_db():
     """
     Obtiene todos los dispositivos de la base de datos.
@@ -1308,7 +1180,7 @@ def obtener_dispositivos_db():
 
 
 def monitorear_dispositivos_periodicamente(
-    intervalo_minutos=15, callback_progreso=None
+    intervalo_minutos=0.15, callback_progreso=None
 ):
     """
     Monitorea dispositivos periódicamente para actualizar su estado activo.
@@ -1358,6 +1230,7 @@ def monitorear_dispositivos_periodicamente(
                         capture_output=True,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
+                    print(f"  [PING] {ip}: {ping_result.stdout.decode('utf-8').strip()}")
 
                     esta_activo = ping_result.returncode == 0
 

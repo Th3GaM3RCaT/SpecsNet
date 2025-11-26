@@ -242,7 +242,7 @@ def probe_mdns(segment_network, iface_ip=None, timeout=1.0):
 # ------------------ PING CHUNKED (async) ------------------
 # Reutilizamos las implementaciones centralizadas en `logica.ping_utils`
 # `ping_one_cmd` y `ping_host` ya están importadas desde ese módulo.
-
+# TODO: ver la forma de reutilizar este codigo para comprobar estado en las ip ya obtenidas
 
 def chunked_iterable(iterable, size):
     it = iter(iterable)

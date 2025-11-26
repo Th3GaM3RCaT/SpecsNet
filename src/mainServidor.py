@@ -7,7 +7,7 @@ sys.path.insert(0, str(project_root))
 
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QColor, QBrush
-from PySide6.QtWidgets import QMainWindow, QMessageBox
+from PySide6.QtWidgets import QMainWindow
 import asyncio
 from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
 from sql.ejecutar_sql import (
@@ -23,7 +23,6 @@ from logica.logica_Hilo import Hilo, HiloConProgreso  # Para operaciones en back
 # Utilitario compartido de ping asíncrono (evitar duplicación)
 from logica.ping_utils import ping_host
 from logica.logica_Hilo import HiloConProgreso
-from logica.logica_servidor import Scanner
 
 # Constantes de colores para estados de dispositivos
 COLOR_ENCENDIDO = "green"

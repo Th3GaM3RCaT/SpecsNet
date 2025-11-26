@@ -635,7 +635,3 @@ def set_dispositivo_inicial(ip, mac):
         (serial_provisional, mac, ip, False),
     )
     connection.commit()
-
-
-# ejemplo de uso
-# abrir_consulta("Dispositivos-select.sql","serial","=","'12345'")
