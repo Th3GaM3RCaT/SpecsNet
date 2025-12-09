@@ -14,10 +14,10 @@ sys.path.insert(0, str(src_dir))
 # Importar y ejecutar el módulo specs
 if __name__ == "__main__":
     # Cambiar directorio de trabajo a src/
-    import os
+    from os import chdir
 
-    os.chdir(src_dir)
+    chdir(src_dir)
 
     # Importar specs como módulo y ejecutar main()
-    import specs
-    specs.main()
+    from specs import main
+    main()

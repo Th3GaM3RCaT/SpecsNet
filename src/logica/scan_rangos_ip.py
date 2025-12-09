@@ -14,12 +14,15 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
         ip_end (str): Dirección IP de fin en formato decimal con puntos.
     Returns:
         tuple: (subred1, subred2) donde cada subred es un objeto ipaddress.IPv4Network.
+               Si hay error, retorna (red_simple, None) con una red /32 del ip_start
     Raises:
         ValueError: Si las direcciones IP no son válidas.
     """
     reg_ex = compile(r"^(10)(\.1[0-1][0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[1-9]|0)){2}$")
     global romper
-    if not ip_start: return
+    if not ip_start:
+        # Retornar una red /32 por defecto en vez de None
+        return (ipaddress.ip_network("10.100.0.0/32"), None)
     if not ip_end:
         ip_end = ip_start [:-1] + str(int(ip_start[-1])+3)
     try:
@@ -27,11 +30,18 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
         if not a:
             romper = True
             print("IP de inicio no válida")
-            return
+            # Retornar red /32 del ip_start si es una IP válida
+            try:
+                return (ipaddress.ip_network(f"{ip_start}/32"), None)
+            except:
+                return (ipaddress.ip_network("10.100.0.0/32"), None)
     except Exception:
         romper = True
         print("Error al validar IP de inicio")
-        return
+        try:
+            return (ipaddress.ip_network(f"{ip_start}/32"), None)
+        except:
+            return (ipaddress.ip_network("10.100.0.0/32"), None)
 
     def ip_to_binary_string(ip):
         """

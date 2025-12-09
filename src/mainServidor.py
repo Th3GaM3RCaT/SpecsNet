@@ -1,14 +1,16 @@
-import sys
+from sys import path, argv
 from pathlib import Path
 
 # Agregar la raíz del proyecto al path para importaciones absolutas
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+path.insert(0, str(project_root))
+
+from traceback import print_exc
 
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import QMainWindow
-import asyncio
+from asyncio import set_event_loop, new_event_loop, sleep, gather
 from ui.inventario_ui import Ui_MainWindow  # Importar el .ui convertido
 from sql.ejecutar_sql import (
     cursor,
@@ -335,9 +337,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
         except Exception as e:
             print(f"Error consultando base de datos: {e}")
-            import traceback
+            
 
-            traceback.print_exc()
+            print_exc()
             self.ui.statusbar.showMessage(f"ERROR: Error cargando datos: {e}", 5000)
 
     def verificar_estados_automatico(self):
@@ -399,13 +401,14 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 resultados_batch = []
                 for i in range (0, len(tareas), BATCH_SIZE):
                     batch = tareas[i:i + BATCH_SIZE]
-                    resultados_batch.extend( await asyncio.gather(*batch, return_exceptions=True))
-                    await asyncio.sleep(0.1)  # Pequeña pausa entre batches
-                return resultados_batch
+                    resultados_batch.extend( await gather(*batch, return_exceptions=True))
+                    await sleep(0.1)  # Pequeña pausa entre batches
+                return resultados_batch 
+                # TODO: posible integracion consulta datos
 
             # Ejecutar verificación asíncrona
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            loop = new_event_loop()
+            set_event_loop(loop)
             try:
                 resultados = loop.run_until_complete(verificar_todos())
                 return resultados
@@ -437,7 +440,13 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             # Mensaje solo si verbose=True
             if verbose:
                 print(f">> Verificación de estados completada")
-
+                # Iniciar consulta de datos de clientes inmediatamente despues del ping
+                # Solo cuando la verificacion fue iniciada manualmente (verbose=True)
+                try:
+                    self.anunciar_y_esperar_clientes()
+                except Exception as e:
+                    print(f"[WARN] No se pudo iniciar consulta post-ping: {e}")
+                
         self.hilo_verificacion = Hilo(verificar_estados)
         self.hilo_verificacion.terminado.connect(callback_estados)
         self.hilo_verificacion.start()
@@ -735,8 +744,8 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                             })
 
                     # Pequeña pausa para no bloquear completamente
-                    import time
-                    time.sleep(0.01)
+                    from time import sleep
+                    sleep(0.01)
 
                 return total
 
@@ -1200,9 +1209,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 return inserted
             except Exception as e:
                 print(f">> Error poblando DB: {e}")
-                import traceback
+                
 
-                traceback.print_exc()
+                print_exc()
                 return 0
 
         self.hilo_poblado = Hilo(callback_poblar)
@@ -1248,9 +1257,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
             except Exception as e:
                 print(f">> Error en consulta: {e}")
-                import traceback
+                
 
-                traceback.print_exc()
+                print_exc()
                 return (0, 0)
 
         # Usar HiloConProgreso para recibir actualizaciones en tiempo real
@@ -1316,9 +1325,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 )
             except Exception as e:
                 print(f">> Error en escaneo: {e}")
-                import traceback
+                
 
-                traceback.print_exc()
+                print_exc()
                 return []
 
         def on_progreso(datos):
@@ -1357,10 +1366,11 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 def main():
     app = QtWidgets.QApplication.instance()
     if app is None:
-        app = QtWidgets.QApplication(sys.argv)
+        app = QtWidgets.QApplication(argv)
 
     window = InventarioWindow()
     window.show()
+    import sys
     sys.exit(app.exec())
 if __name__ == "__main__":
     main()

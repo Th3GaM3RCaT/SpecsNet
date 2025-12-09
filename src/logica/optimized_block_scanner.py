@@ -242,8 +242,6 @@ def probe_mdns(segment_network, iface_ip=None, timeout=1.0):
 # ------------------ PING CHUNKED (async) ------------------
 # Reutilizamos las implementaciones centralizadas en `logica.ping_utils`
 # `ping_one_cmd` y `ping_host` ya están importadas desde ese módulo.
-# TODO: ver la forma de reutilizar este codigo para comprobar estado en las ip ya obtenidas
-
 def chunked_iterable(iterable, size):
     it = iter(iterable)
     while True:
@@ -497,17 +495,32 @@ def _ping_ip_sync(ip: str, timeout: float = 1.0) -> bool:
 
 
 # ------------------ ENTRYPOINT ------------------
-def main(callback_progreso=None):
+def main(callback_progreso=None, ranges=None):
     """
     Entry point principal del scanner.
 
     Args:
         callback_progreso: Función opcional que recibe diccionarios con información de progreso.
                           Ejemplo: {'tipo': 'rango', 'rango_actual': '10.100.10.50-10.100.10.58', 'mensaje': '...'}
+        ranges: Lista de rangos en formato ['10.100.2.1-10.100.2.254']. Si es None, usa argparse.
     """
-    args = parse_args()
-    if not args.ranges:
-        print("ERROR: Debes proporcionar al menos un rango con --ranges")
+    # Si se pasan rangos directamente, usarlos; si no, parsear argumentos
+    if ranges:
+        from types import SimpleNamespace
+        args = SimpleNamespace(
+            ranges=ranges,
+            chunk_size=256,
+            per_host_timeout=1.0,
+            per_subnet_timeout=5.0,
+            concurrency=100,
+            probe_timeout=0.5,
+            use_broadcast_probe=False
+        )
+    else:
+        args = parse_args()
+        if not args.ranges:
+            print("ERROR: Debes proporcionar al menos un rango con --ranges")
+            return []
 
     try:
         get_local_supernet()

@@ -2,6 +2,13 @@
 
 from json import dumps
 
+from pathlib import Path
+from os import chdir
+from sys import path as sys_path
+project_root = Path(__file__).parent.parent
+sys_path.insert(0, str(project_root))
+chdir(project_root)
+
 modo_tarea = "--tarea" in argv
 
 
@@ -107,7 +114,7 @@ else:
         QWidget,
     )
     from ui.specs_window_ui import Ui_MainWindow
-    from logica import logica_specs as lsp
+    import logica.logica_specs as lsp
 
     app = QApplication(argv)
 
@@ -198,7 +205,10 @@ else:
             """Envía especificaciones al servidor."""
             self.statusbar.showMessage(" Preparando envío de datos...", 2000)
             self.send_button.setEnabled(False)
-            with open("salida.json", "w", encoding="utf-8") as f:
+            from pathlib import Path # lazy import
+            from config.security_config import OUTPUT_DIR # lazy import
+            output_dir = Path(__file__).parent.parent.parent / OUTPUT_DIR / "salida.json"
+            with open(output_dir, "w", encoding="utf-8") as f:
                 dump(lsp.new, f, indent=4)
             self.hilo_enviar = Hilo(lsp.enviar_a_servidor)
             self.hilo_enviar.terminado.connect(
@@ -210,16 +220,14 @@ else:
             self.hilo_enviar.start()
 
     def main():
-        """Función principal para ejecutar la GUI."""
         if "--tarea" in argv:
             print("modo tarea")
         else:
             window = MainWindow()
             window.show()
-            from sys import exit
+            from sys import exit # lazy import
 
             exit(app.exec())
 
-    # Ejecutar solo si es el script principal
     if __name__ == "__main__":
         main()

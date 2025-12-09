@@ -41,16 +41,6 @@ $pyinstallerArgs = @(
     "--onedir",
     "--noconsole",
     "--name", "SpecsNet - Cliente",
-    "--add-data", "src/ui/*.ui;ui",
-    "--hidden-import=wmi",
-    "--hidden-import=psutil",
-    "--hidden-import=getmac",
-    "--hidden-import=windows_tools.installed_software",
-    "--hidden-import=PySide6",
-    "--hidden-import=PySide6.QtCore",
-    "--hidden-import=PySide6.QtGui",
-    "--hidden-import=PySide6.QtWidgets",
-    "--paths=src",
     "src/specs.py"
 )
 

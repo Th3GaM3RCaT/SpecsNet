@@ -5,9 +5,10 @@ from sys import argv
 from threading import Thread
 from pathlib import Path
 from datetime import datetime
-import csv
-import re
-import asyncio
+from csv import DictReader
+from re import search
+from asyncio import wait_for, open_connection, get_event_loop, TimeoutError
+
 
 from PySide6.QtWidgets import QApplication
 from sql import ejecutar_sql as sql
@@ -23,12 +24,12 @@ is_ip_allowed: Optional[Callable] = None  # type: ignore[assignment]
 sanitize_field: Optional[Callable] = None  # type: ignore[assignment]
 
 try:
-    import sys
+    from sys import path
     from pathlib import Path
 
     # Agregar directorio config al path
     config_dir = Path(__file__).parent.parent.parent / "config"
-    sys.path.insert(0, str(config_dir))
+    path.insert(0, str(config_dir))
 
     from security_config import (  # type: ignore[import]
         verify_auth_token,
@@ -59,10 +60,10 @@ except ImportError:
         return str(value)[:max_length] if value else ""
 
 
-import socket as sckt
+from socket import gethostbyname, gethostname
 
 # Obtener IP local
-LOCAL_IP = sckt.gethostbyname(sckt.gethostname())
+LOCAL_IP = gethostbyname(gethostname())
 # Servidor escucha en la IP local (no en 0.0.0.0 para evitar problemas de firewall)
 HOST = LOCAL_IP
 # Puerto TCP del servidor (cargar desde .env)
@@ -255,36 +256,32 @@ class Scanner:
 
         except Exception as e:
             print(f"[parse_csv_to_db] Error con conexión DB: {e}")
-            import traceback
+            from traceback import print_exc
 
-            traceback.print_exc()
+            print_exc()
 
         return inserted
 
     def run_scan_con_rangos(self, start_ip, end_ip, callback_progreso=None):
         """Ejecuta el escaneo con rangos específicos de IP."""
         # Importar el módulo del escáner
-        import logica.optimized_block_scanner as scan
+        from . import optimized_block_scanner as scan
 
-        # Simular argumentos para el escáner (ya que usa argparse)
-        # Necesitas modificar optimized_block_scanner.py para aceptar rangos directamente
-        # Por ahora, puedes llamar scan.main() con argumentos simulados
-        import sys
-
-        # Guardar sys.argv original
-        original_argv = sys.argv
-
-        # Simular argumentos para --ranges
-        sys.argv = ["optimized_block_scanner.py", "--ranges", f"{start_ip}-{end_ip}"]
-        print(f"[Scanner] Ejecutando escaneo para rangos {start_ip} - {end_ip}")
+        # Construir lista de rangos en formato esperado
+        rango = f"{start_ip}-{end_ip}"
+        print(f"[Scanner] Ejecutando escaneo para rangos {rango}")
+        
         try:
-            # Capturar el resultado del escaneo
+            # Llamar a main pasando los rangos directamente
             print("[Scanner] Llamando a scan.main...")
-            alive = scan.main(callback_progreso=callback_progreso)
+            alive = scan.main(callback_progreso=callback_progreso, ranges=[rango])
             print(f"[Scanner] Escaneo completado, alive: {len(alive) if alive else 0}")
             return alive  # Devolver la lista de IPs vivas
-        finally:
-            sys.argv = original_argv  # Restaurar
+        except Exception as e:
+            print(f"[Scanner] Error durante escaneo: {e}")
+            from traceback import print_exc
+            print_exc()
+            return []
 
 
 def parsear_datos_dispositivo(json_data):
@@ -321,19 +318,19 @@ def parsear_datos_dispositivo(json_data):
             dxdiag_txt = dxdiag_txt[: 1024 * 100]
 
         # Buscar Processor
-        proc_match = re.search(r"Processor:\s*(.+)", dxdiag_txt)
+        proc_match = search(r"Processor:\s*(.+)", dxdiag_txt)
         if proc_match:
             processor = proc_match.group(1).strip()
 
         # Buscar GPU (Card name)
-        gpu_match = re.search(r"Card name:\s*(.+)", dxdiag_txt)
+        gpu_match = search(r"Card name:\s*(.+)", dxdiag_txt)
         if gpu_match:
             gpu = gpu_match.group(1).strip()
 
         # Buscar información de disco (Drive, Model, Total Space)
-        drive_match = re.search(r"Drive:\s*(\w+):", dxdiag_txt)
-        model_match = re.search(r"Model:\s*(.+)", dxdiag_txt)
-        space_match = re.search(r"Total Space:\s*([\d.]+\s*[A-Z]+)", dxdiag_txt)
+        drive_match = search(r"Drive:\s*(\w+):", dxdiag_txt)
+        model_match = search(r"Model:\s*(.+)", dxdiag_txt)
+        space_match = search(r"Total Space:\s*([\d.]+\s*[A-Z]+)", dxdiag_txt)
 
         disk_parts = []
         if drive_match:
@@ -369,7 +366,7 @@ def parsear_datos_dispositivo(json_data):
         for key, value in json_data.items():
             if "total virtual memory" in key.lower() or "total memory" in key.lower():
                 # Extraer número
-                match = re.search(r"([\d.]+)\s*GB", str(value))
+                match = search(r"([\d.]+)\s*GB", str(value))
                 if match:
                     ram_gb = int(float(match.group(1)))
                     break
@@ -447,7 +444,7 @@ def parsear_almacenamiento(json_data):
             fstype = json_data.get("  File system type", "")
 
             # Parsear tamaño
-            size_match = re.search(r"([\d.]+)\s*([A-Z]+)", total_size)
+            size_match = search(r"([\d.]+)\s*([A-Z]+)", total_size)
             capacidad_gb = 0
             if size_match:
                 num = float(size_match.group(1))
@@ -578,104 +575,83 @@ def consultar_informacion(conn, addr):
 
                 # Parsear datos para tabla Dispositivos
                 datos_dispositivo = parsear_datos_dispositivo(json_data)
-                serial = datos_dispositivo[0]
+                serial_cliente = datos_dispositivo[0]
                 mac = datos_dispositivo[3]
                 ip = datos_dispositivo[10]
 
-                # Si el serial viene vacío del cliente, generar uno temporal basado en MAC
-                if not serial or serial.strip() == "":
-                    if mac:
-                        serial = f"TEMP_{mac.replace(':', '').replace('-', '')}"
-                        print(f"[WARN] Cliente sin serial, usando temporal: {serial}")
-                    else:
-                        serial = "TEMP_UNKNOWN"
-                        print("[WARN] Cliente sin serial ni MAC, usando TEMP_UNKNOWN")
-                    # Actualizar tupla con el serial temporal
-                    datos_dispositivo = (serial,) + datos_dispositivo[1:]
+                # SIEMPRE buscar primero si existe un dispositivo con esta IP
+                serial_a_usar = serial_cliente
+                sql.cursor.execute(
+                    "SELECT serial, MAC FROM Dispositivos WHERE ip = ?", (ip,)
+                )
+                dispositivo_existente = sql.cursor.fetchone()
 
-                # Si el serial NO es temporal y hay MAC, verificar si existe dispositivo para actualizar
-                elif not serial.startswith("TEMP"):
-                    dispositivo_existente = None
-
-                    # 1. Buscar por MAC si existe
-                    if mac:
-                        # Buscar serial temporal basado en MAC
-                        if sql.actualizar_serial_temporal(serial, mac):
-                            print(
-                                f"[OK] Serial temporal (por MAC) actualizado a {serial}"
-                            )
-                            dispositivo_existente = serial
-                        else:
-                            # Buscar cualquier dispositivo con esa MAC
-                            sql.cursor.execute(
-                                "SELECT serial FROM Dispositivos WHERE MAC = ?", (mac,)
-                            )
-                            resultado = sql.cursor.fetchone()
-                            if resultado:
-                                dispositivo_existente = resultado[0]
-                                print(
-                                    f"[INFO] Dispositivo encontrado por MAC: {dispositivo_existente}"
-                                )
-
-                    # 2. Si no encontró por MAC, buscar por IP
-                    if not dispositivo_existente and ip:
+                if dispositivo_existente:
+                    serial_db = dispositivo_existente[0]
+                    mac_db = dispositivo_existente[1]
+                    
+                    print(f"[INFO] Dispositivo encontrado en DB: serial={serial_db}, MAC={mac_db}")
+                    
+                    # Usar el serial de la DB para actualizar (mantener identidad del registro)
+                    serial_a_usar = serial_db
+                    
+                    # Si el serial del cliente es real (no temporal) y difiere del de la DB, actualizar
+                    if serial_cliente and not serial_cliente.startswith("TEMP") and serial_cliente != serial_db:
+                        print(f"[UPDATE] Actualizando serial de {serial_db} a {serial_cliente}")
+                        
+                        # Actualizar serial en todas las tablas relacionadas
                         sql.cursor.execute(
-                            "SELECT serial, MAC FROM Dispositivos WHERE ip = ?", (ip,)
+                            "UPDATE Dispositivos SET serial = ? WHERE serial = ?",
+                            (serial_cliente, serial_db),
                         )
-                        resultado = sql.cursor.fetchone()
-                        if resultado:
-                            serial_anterior = resultado[0]
-                            mac_anterior = resultado[1]
+                        sql.cursor.execute(
+                            "UPDATE activo SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                            (serial_cliente, serial_db),
+                        )
+                        sql.cursor.execute(
+                            "UPDATE registro_cambios SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                            (serial_cliente, serial_db),
+                        )
+                        sql.cursor.execute(
+                            "UPDATE almacenamiento SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                            (serial_cliente, serial_db),
+                        )
+                        sql.cursor.execute(
+                            "UPDATE memoria SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                            (serial_cliente, serial_db),
+                        )
+                        sql.cursor.execute(
+                            "UPDATE aplicaciones SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                            (serial_cliente, serial_db),
+                        )
+                        sql.cursor.execute(
+                            "UPDATE informacion_diagnostico SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
+                            (serial_cliente, serial_db),
+                        )
+                        sql.connection.commit()
+                        
+                        # Ahora usar el serial actualizado
+                        serial_a_usar = serial_cliente
+                else:
+                    # No existe dispositivo con esta IP
+                    if not serial_cliente or serial_cliente.strip() == "":
+                        # Generar serial temporal
+                        if mac:
+                            serial_a_usar = f"TEMP_{mac.replace(':', '').replace('-', '')}"
+                            print(f"[WARN] Cliente sin serial, usando temporal: {serial_a_usar}")
+                        else:
+                            serial_a_usar = f"TEMP_{ip.replace('.', '')}"
+                            print(f"[WARN] Cliente sin serial ni MAC, usando temporal basado en IP: {serial_a_usar}")
 
-                            # Si el dispositivo no tenía MAC, actualizarlo
-                            if not mac_anterior or mac_anterior.strip() == "":
-                                print(
-                                    f"[UPDATE] Dispositivo encontrado por IP sin MAC: {serial_anterior}"
-                                )
-                                print(
-                                    f"[UPDATE] Actualizando de {serial_anterior} a {serial} y agregando MAC {mac}"
-                                )
-
-                                # Actualizar serial en todas las tablas
-                                sql.cursor.execute(
-                                    "UPDATE Dispositivos SET serial = ? WHERE serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.cursor.execute(
-                                    "UPDATE activo SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.cursor.execute(
-                                    "UPDATE registro_cambios SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.cursor.execute(
-                                    "UPDATE almacenamiento SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.cursor.execute(
-                                    "UPDATE memoria SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.cursor.execute(
-                                    "UPDATE aplicaciones SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.cursor.execute(
-                                    "UPDATE informacion_diagnostico SET Dispositivos_serial = ? WHERE Dispositivos_serial = ?",
-                                    (serial, serial_anterior),
-                                )
-                                sql.connection.commit()
-
-                                dispositivo_existente = serial
-
-                # Insertar/actualizar dispositivo
+                # Reconstruir tupla con el serial correcto
+                datos_dispositivo = (serial_a_usar,) + datos_dispositivo[1:]
+                
+                # Insertar/actualizar dispositivo (UPSERT por serial)
                 sql.setDevice(datos_dispositivo)
-                print(f"Dispositivo {datos_dispositivo[0]} guardado en DB")
+                print(f"Dispositivo {serial_a_usar} guardado en DB")
 
                 # Actualizar estado activo
-                serial = datos_dispositivo[0]
-                sql.setActive((serial, True, datetime.now().isoformat()))
+                sql.setActive((serial_a_usar, True, datetime.now().isoformat()))
 
                 # Guardar módulos RAM
                 modulos_ram = parsear_modulos_ram(json_data)
@@ -702,12 +678,12 @@ def consultar_informacion(conn, addr):
                 dxdiag_txt = json_data.get("dxdiag_output_txt", "")
                 json_str = dumps(json_data, indent=2)
                 sql.setInformeDiagnostico(
-                    (serial, json_str, dxdiag_txt, datetime.now().isoformat())
+                    (serial_a_usar, json_str, dxdiag_txt, datetime.now().isoformat())
                 )
 
                 # Commit cambios
                 sql.connection.commit()
-                print(f"[OK] Datos del dispositivo {serial} guardados exitosamente")
+                print(f"[OK] Datos del dispositivo {serial_a_usar} guardados exitosamente")
 
                 # Opcional: guardar backup en JSON para debug
                 try:
@@ -727,9 +703,9 @@ def consultar_informacion(conn, addr):
                 continue
             except Exception as e:
                 print(f"Error procesando datos: {e}")
-                import traceback
+                from traceback import print_exc
 
-                traceback.print_exc()
+                print_exc()
                 break
 
     except ConnectionResetError:
@@ -818,7 +794,7 @@ def cargar_ips_desde_csv(archivo_csv=None):
     invalidas = 0
     try:
         with open(archivo_csv, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
+            reader = DictReader(f)
             for row in reader:
                 ip = row.get("ip", "").strip()
                 mac = row.get("mac", "").strip()
@@ -860,34 +836,32 @@ async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
     Returns:
         True si se recibieron datos correctamente, False en caso contrario
     """
-    import json
+    from json import loads
 
     try:
         # Conectar de forma asíncrona (timeout 10s para la conexión)
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(client_ip, client_port), timeout=10.0
+        reader, writer = await wait_for(
+            open_connection(client_ip, client_port), timeout=10.0
         )
-
-        # Enviar comando GET_SPECS
         writer.write(b"GET_SPECS")
         await writer.drain()
 
         # Recibir respuesta con timeout más largo
         # El cliente puede tardar 10-30 segundos en recopilar datos
         buffer = b""
-        start_time = asyncio.get_event_loop().time()
+        start_time = get_event_loop().time()
 
         while True:
             try:
                 # Calcular tiempo restante
-                elapsed = asyncio.get_event_loop().time() - start_time
+                elapsed = get_event_loop().time() - start_time
                 remaining = timeout - elapsed
 
                 if remaining <= 0:
                     break
 
                 # Leer con timeout dinámico
-                chunk = await asyncio.wait_for(
+                chunk = await wait_for(
                     reader.read(4096),
                     timeout=min(remaining, 15.0),  # Máximo 15s por chunk
                 )
@@ -901,7 +875,7 @@ async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
                 if buffer.endswith(b"}"):
                     break
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Si ya tenemos datos, salir del loop
                 if buffer:
                     break
@@ -917,7 +891,7 @@ async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
             return False
 
         # Decodificar JSON
-        json_data = json.loads(buffer.decode("utf-8"))
+        json_data = loads(buffer.decode("utf-8"))
 
         # Validar que tenga campos mínimos
         if "SerialNumber" not in json_data or "MAC Address" not in json_data:
@@ -1007,7 +981,7 @@ async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
             print(f"        -> Error guardando datos: {e}")
             return False
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print(f"        -> Timeout conectando a {client_ip}")
         return False
     except Exception as e:
@@ -1027,7 +1001,7 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
     Returns:
         Tupla (activos, total)
     """
-    import asyncio
+    from asyncio import gather
 
     ips_macs = cargar_ips_desde_csv(archivo_csv)
     total = len(ips_macs)
@@ -1038,7 +1012,7 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
     ip_to_row = {}
 
     async def ping_y_actualizar_dispositivo(ip, mac, index):
-        """Hace ping, y si está activo solicita datos completos (GET_SPECS)"""
+        """Hace ping, y si está activo solicita datos completos"""
         try:
             # Usar utilitario centralizado de ping (timeout 1s)
             activo = await ping_host(ip, 1.0)
@@ -1151,7 +1125,7 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
             print(
                 f"\n>> Procesando lote {batch_num}/{total_batches} ({len(batch)} dispositivos)..."
             )
-            batch_results = await asyncio.gather(*batch, return_exceptions=True)
+            batch_results = await gather(*batch, return_exceptions=True)
             resultados.extend(batch_results)
 
         return resultados
@@ -1192,7 +1166,7 @@ def monitorear_dispositivos_periodicamente(
     Returns:
         Esta función corre indefinidamente hasta ser interrumpida
     """
-    import time
+    from time import sleep
 
     print(f"\n=== Iniciando monitoreo periódico (cada {intervalo_minutos} min) ===\n")
 
@@ -1203,7 +1177,7 @@ def monitorear_dispositivos_periodicamente(
 
             if not dispositivos:
                 print("No hay dispositivos para monitorear")
-                time.sleep(intervalo_minutos * 60)
+                sleep(intervalo_minutos * 60)
                 continue
 
             print(
@@ -1223,12 +1197,12 @@ def monitorear_dispositivos_periodicamente(
 
                 # Hacer ping al dispositivo
                 try:
-                    import subprocess
+                    from subprocess import run, CREATE_NO_WINDOW
 
-                    ping_result = subprocess.run(
+                    ping_result = run(
                         ["ping", "-n", "1", "-w", "1000", ip],
                         capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        creationflags=CREATE_NO_WINDOW,
                     )
                     print(f"  [PING] {ip}: {ping_result.stdout.decode('utf-8').strip()}")
 
@@ -1255,14 +1229,14 @@ def monitorear_dispositivos_periodicamente(
             )
 
             # Esperar antes de la próxima ronda
-            time.sleep(intervalo_minutos * 60)
+            sleep(intervalo_minutos * 60)
 
         except KeyboardInterrupt:
             print("\n=== Monitoreo detenido por usuario ===")
             break
         except Exception as e:
             print(f"Error en monitoreo: {e}")
-            import traceback
+            from traceback import print_exc
 
-            traceback.print_exc()
-            time.sleep(10)
+            print_exc()
+            sleep(10)

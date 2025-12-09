@@ -6,6 +6,8 @@ from pathlib import Path
 from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket
 from subprocess import CREATE_NO_WINDOW, run
 import sys
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # Imports pesados - cargar lazy (solo cuando se usan)
 # psutil, wmi, windows_tools se importan dentro de informe()
@@ -197,7 +199,8 @@ def preparar_datos_completos():
 
     # Agregar informe DirectX si existe
     try:
-        output_dir = Path(__file__).parent.parent.parent / "output"
+        from config.security_config import OUTPUT_DIR
+        output_dir = Path(__file__).parent.parent.parent / OUTPUT_DIR
         dxdiag_file = output_dir / "dxdiag_output.txt"
 
         if dxdiag_file.exists():

@@ -4,20 +4,20 @@ Wrapper para ejecutar el servidor desde la raíz del proyecto.
 Ejecuta: python src/servidor.py
 """
 
-import sys
+from sys import path
 from pathlib import Path
 
 # Agregar src/ al path de Python
 src_dir = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_dir))
+path.insert(0, str(src_dir))
 
 # Importar y ejecutar el módulo servidor
 if __name__ == "__main__":
     # Cambiar directorio de trabajo a src/
-    import os
+    from os import chdir
 
-    os.chdir(src_dir)
+    chdir(src_dir)
 
     # Importar servidor como módulo y ejecutar main()
-    import mainServidor
-    mainServidor.main()
+    from mainServidor import main
+    main()
