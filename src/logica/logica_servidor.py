@@ -2,6 +2,7 @@ from concurrent.futures import thread
 from glob import glob
 from json import JSONDecodeError, dump, load, loads, dumps
 from socket import AF_INET, SOCK_STREAM, socket
+import ssl
 from sys import argv
 from threading import Thread
 from pathlib import Path
@@ -109,15 +110,18 @@ class ServerManager:
             server_socket = socket(AF_INET, SOCK_STREAM)
             server_socket.bind((self.host, self.port))
             server_socket.listen()
+            
+            context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            context.load_cert_chain("server.crt", "server.key")
             print(f"[ServerManager] Servidor TCP escuchando en {self.host}:{self.port}")
 
             # Loop de aceptación (bloqueante)
             while True:
                 conn, addr = server_socket.accept()
-                clientes.append(conn)
-                hilo = Thread(
-                    target=consultar_informacion, args=(conn, addr), daemon=True
-                )
+                
+                conn_ssl = context.wrap_socket(conn, server_side=True)
+                clientes.append(conn_ssl)
+                hilo = Thread(target=consultar_informacion, args=(conn_ssl, addr), daemon=True)
                 hilo.start()
         except Exception as e:
             print(f"[ServerManager] Error al iniciar servidor TCP: {e}")

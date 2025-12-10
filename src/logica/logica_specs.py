@@ -375,11 +375,18 @@ def enviar_a_servidor(server_ip=None):
     # Conectar vía TCP y enviar todo
     _print_status(f"[CONNECT] Conectando al servidor {HOST}:{tcp_port}...")
     try:
+        import ssl
         cliente = socket(AF_INET, SOCK_STREAM)
-        cliente.connect((HOST, tcp_port))
-        cliente.sendall(dumps(new).encode("utf-8"))
-        cliente.close()
-        _print_status("[OK] Datos enviados correctamente al servidor")
+        context = ssl.create_default_context()
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_verify_locations("server.crt")  
+        
+        client_ssl = context.wrap_socket(cliente, server_hostname=HOST)
+        client_ssl.connect((HOST, tcp_port))
+        client_ssl.sendall(dumps(new).encode("utf-8"))
+        client_ssl.close()
+        _print_status("[OK] Datos enviados con TLS")
     except Exception as e:
         _print_status(f"[ERROR] Error al enviar datos: {e}")
 
