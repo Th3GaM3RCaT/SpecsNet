@@ -140,8 +140,7 @@ def setaplication(aplicacion=tuple(), conn=None):
         cur.execute(
             """INSERT INTO aplicaciones 
                        (Dispositivos_serial, name, version, publisher)
-                       VALUES (?,?,?,?)""",
-            (aplicacion[0], aplicacion[1], aplicacion[2], aplicacion[3]),
+                       VALUES (?,?,?,?)""",aplicacion,
         )
 
 
@@ -176,15 +175,7 @@ def setAlmacenamiento(almacenamiento=tuple(), indice=1, conn=None):
     cur.execute(
         """INSERT INTO almacenamiento 
                    (Dispositivos_serial, nombre, capacidad, tipo, actual, fecha_instalacion)
-                   VALUES (?,?,?,?,?,?)""",
-        (
-            almacenamiento[0],
-            almacenamiento[1],
-            almacenamiento[2],
-            almacenamiento[3],
-            almacenamiento[4],
-            almacenamiento[5],
-        ),
+                   VALUES (?,?,?,?,?,?)""",almacenamiento,
     )
 
 
@@ -216,17 +207,7 @@ def setMemoria(memoria=tuple(), indice=1, conn=None):
     cur.execute(
         """INSERT INTO memoria 
                    (Dispositivos_serial, modulo, fabricante, capacidad, velocidad, numero_serie, actual, fecha_instalacion)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-        (
-            memoria[0],
-            memoria[1],
-            memoria[2],
-            memoria[3],
-            memoria[4],
-            memoria[5],
-            memoria[6],
-            memoria[7],
-        ),
+                   VALUES (?,?,?,?,?,?,?,?)""",memoria,
     )
 
 
@@ -244,8 +225,7 @@ def setInformeDiagnostico(informes=tuple(), conn=None):
     cur.execute(
         """INSERT INTO informacion_diagnostico 
                    (Dispositivos_serial, json_diagnostico, reporteDirectX, fecha)
-                   VALUES (?,?,?,?)""",
-        (informes[0], informes[1], informes[2], informes[3]),
+                   VALUES (?,?,?,?)""",informes,
     )
 
 
@@ -265,18 +245,7 @@ def setRegistro_cambios(registro=tuple(), conn=None):
     cur.execute(
         """INSERT INTO registro_cambios 
                    (Dispositivos_serial, user, processor, GPU, RAM, disk, license_status, ip, date)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-        (
-            registro[0],
-            registro[1],
-            registro[2],
-            registro[3],
-            registro[4],
-            registro[5],
-            registro[6],
-            registro[7],
-            registro[8],
-        ),
+                   VALUES (?,?,?,?,?,?,?,?,?)""",registro,
     )
 
 

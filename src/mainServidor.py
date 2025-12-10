@@ -1,3 +1,4 @@
+import os
 from sys import path, argv
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def actualizar_estado_item(item: QtWidgets.QTableWidgetItem, estado: str):
         item.setText("Apagado")
         item.setBackground(QBrush(QColor(COLOR_APAGADO)))
     elif estado == "sin_ip":
-        item.setText("[?] Sin IP")
+        item.setText("[?]")
         item.setBackground(QBrush(QColor(COLOR_SIN_IP)))
     elif estado == "verificando":
         item.setText("[...]")
@@ -83,7 +84,15 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.ui = Ui_MainWindow()
+        
         self.ui.setupUi(self)
+        qss_path = self.property("qss_file")
+        if qss_path:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            qss_path = os.path.join(base_dir, qss_path)
+            with open(qss_path, "r") as f:
+                self.setStyleSheet(f.read())
+       
 
         # Hilos para operaciones de red
         self.hilo_servidor = None
@@ -91,7 +100,8 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.hilo_escaneo_rangos = None        
         self.hilo_consulta = None
         self.hilo_procesamiento = None
-        self.procesamiento_en_curso = False        # Ruta del último CSV generado por Scanner (si aplica)
+        self.procesamiento_en_curso = False
+        self.consulta_en_curso = False  # Flag para evitar consultas simultáneas
         self._last_csv = None
 
         # Facade server manager (puede ser None si no se pudo instanciar)
@@ -132,10 +142,15 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Iniciar servidor en segundo plano
         self.iniciar_servidor()
 
-        # Timer para verificación automática de estados cada 10 segundos
+        # Timer para verificación automática de estados cada 20 segundos
         self.timer_estados = QtCore.QTimer(self)
         self.timer_estados.timeout.connect(self.verificar_estados_automatico)
         self.timer_estados.start(20000)  # 20 segundos
+
+        # Timer para consulta diaria de datos de clientes (cada 24 horas)
+        self.timer_consulta_diaria = QtCore.QTimer(self)
+        self.timer_consulta_diaria.timeout.connect(self.consulta_diaria_clientes)
+        self.timer_consulta_diaria.start(86400000)  # 86400000 ms = 24 horas
 
     def cargar_datos_iniciales(self):
         """Carga datos de la DB. Si no hay datos, inicia actualización automática."""
@@ -440,10 +455,12 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             # Mensaje solo si verbose=True
             if verbose:
                 print(f">> Verificación de estados completada")
-                # Iniciar consulta de datos de clientes inmediatamente despues del ping
-                # Solo cuando la verificacion fue iniciada manualmente (verbose=True)
+                # Iniciar consulta de datos de clientes SOLO si no hay una en curso
                 try:
-                    self.anunciar_y_esperar_clientes()
+                    if not self.consulta_en_curso:
+                        self.anunciar_y_esperar_clientes()
+                    else:
+                        print("[INFO] Consulta omitida - ya hay una en curso")
                 except Exception as e:
                     print(f"[WARN] No se pudo iniciar consulta post-ping: {e}")
                 
@@ -1231,9 +1248,38 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         """Error en Paso 2"""
         self.ui.statusbar.showMessage(f"ERROR: Error poblando DB: {error}", 5000)
         self.ui.btnActualizar.setEnabled(True)
+        
+    def consulta_diaria_clientes(self):
+        """Ejecuta consulta automática de clientes a las 2 AM diariamente"""
+        from datetime import datetime
+        
+        # Verificar si ya hay una consulta en curso
+        if self.consulta_en_curso:
+            print("[INFO] Ya hay una consulta en curso, omitiendo consulta diaria")
+            return
+        
+        hora_actual = datetime.now().hour
+        
+        # Solo ejecutar entre 2 AM y 3 AM (horario de baja carga)
+        if hora_actual != 2:
+            return  # Esperar al próximo ciclo
+        
+        print("\n=== Consulta Diaria Automática (2:00 AM) ===")
+        print(f">> Iniciando a las {datetime.now().strftime('%H:%M:%S')}")
+        
+        self.ui.statusbar.showMessage("Ejecutando consulta diaria de clientes...", 0)
+        self.anunciar_y_esperar_clientes()
 
     def anunciar_y_esperar_clientes(self):
         """Paso 3: Consulta cada cliente directamente con actualizaciones en tiempo real (sin broadcasts)"""
+        
+        # Evitar consultas simultáneas
+        if self.consulta_en_curso:
+            print("[INFO] Ya hay una consulta en curso - omitiendo")
+            return
+        
+        self.consulta_en_curso = True
+        print("[INFO] Iniciando consulta de clientes...")
 
         def callback_consulta(callback_progreso=None):
             try:
@@ -1261,16 +1307,10 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
                 print_exc()
                 return (0, 0)
-
-        # Usar HiloConProgreso para recibir actualizaciones en tiempo real
-        self.hilo_consulta = HiloConProgreso(callback_consulta)
-        self.hilo_consulta.progreso.connect(self.on_consulta_progreso)
-        self.hilo_consulta.terminado.connect(self.on_consulta_terminada)
-        self.hilo_consulta.error.connect(self.on_consulta_error)
-        self.hilo_consulta.start()
-
     def on_consulta_terminada(self, resultado):
         """Callback Paso 3 completado"""
+        self.consulta_en_curso = False
+        
         activos, total = resultado
         self.ui.statusbar.showMessage(
             f">> Paso 3/4: {activos}/{total} clientes respondieron - Actualizando vista...",
@@ -1278,12 +1318,21 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         )
         # Paso 4: Recargar tabla filtrando solo los encontrados
         self.finalizar_escaneo_completo()
-
+        """Callback Paso 3 completado"""
+        activos, total = resultado
+        self.ui.statusbar.showMessage(
+            f">> Paso 3/4: {activos}/{total} clientes respondieron - Actualizando vista...",
+            0,
+        )
+        # Paso 4: Recargar tabla filtrando solo los encontrados
     def on_consulta_error(self, error):
         """Error en Paso 3"""
+        self.consulta_en_curso = False
+        
         self.ui.statusbar.showMessage(
             f"ERROR: Error consultando clientes: {error}", 5000
         )
+        self.ui.btnActualizar.setEnabled(True)
         self.ui.btnActualizar.setEnabled(True)
 
     def finalizar_escaneo_completo(self):

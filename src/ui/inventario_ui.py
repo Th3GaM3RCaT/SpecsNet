@@ -30,8 +30,8 @@ class Ui_MainWindow(object):
         MainWindow.resize(1280, 720)
         MainWindow.setMinimumSize(QSize(1280, 720))
         MainWindow.setStyleSheet(u"\n"
-"  @import url(\"Combinear.qss\");\n"
-"")
+"    @import url(\"Combinear.qss\");\n"
+"  ")
         self.actionExportarExcel = QAction(MainWindow)
         self.actionExportarExcel.setObjectName(u"actionExportarExcel")
         self.actionExportarPDF = QAction(MainWindow)
@@ -327,7 +327,7 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1280, 24))
+        self.menubar.setGeometry(QRect(0, 0, 1280, 21))
         self.menuArchivo = QMenu(self.menubar)
         self.menuArchivo.setObjectName(u"menuArchivo")
         self.menuVer = QMenu(self.menubar)
@@ -361,6 +361,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Sistema de Inventario - \u00c1rea de Inform\u00e1tica", None))
+        MainWindow.setProperty(u"qss_file", QCoreApplication.translate("MainWindow", u"ui/Combinear.qss", None))
         self.actionExportarExcel.setText(QCoreApplication.translate("MainWindow", u"Exportar a Excel", None))
         self.actionExportarPDF.setText(QCoreApplication.translate("MainWindow", u"Exportar a PDF", None))
         self.actionSalir.setText(QCoreApplication.translate("MainWindow", u"Salir", None))

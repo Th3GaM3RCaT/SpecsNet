@@ -288,11 +288,13 @@ def enviar_a_servidor(server_ip=None):
         Genera token de autenticación basado en timestamp y secreto compartido.
     """
     # Importar seguridad si está disponible
+    from sys import path
+    from pathlib import Path
     generate_auth_token = None
     security_available = False
 
     try:
-        from sys import path
+
 
         # Agregar directorio config al path
         config_dir = Path(__file__).parent.parent.parent / "config"
@@ -375,18 +377,45 @@ def enviar_a_servidor(server_ip=None):
     # Conectar vía TCP y enviar todo
     _print_status(f"[CONNECT] Conectando al servidor {HOST}:{tcp_port}...")
     try:
-        import ssl
-        cliente = socket(AF_INET, SOCK_STREAM)
-        context = ssl.create_default_context()
-        context.check_hostname = True
-        context.verify_mode = ssl.CERT_REQUIRED
-        context.load_verify_locations("server.crt")  
+        # Cargar configuración TLS
+        try:
+            from config.security_config import USE_TLS, TLS_CERT_PATH
+        except ImportError:
+            USE_TLS = True  # Por defecto usar TLS
+            TLS_CERT_PATH = "config/server.crt"
         
-        client_ssl = context.wrap_socket(cliente, server_hostname=HOST)
-        client_ssl.connect((HOST, tcp_port))
-        client_ssl.sendall(dumps(new).encode("utf-8"))
-        client_ssl.close()
-        _print_status("[OK] Datos enviados con TLS")
+        cliente = socket(AF_INET, SOCK_STREAM)
+        
+        if USE_TLS:
+            import ssl
+            from pathlib import Path
+            
+            cert_path = Path(TLS_CERT_PATH)
+            if not cert_path.exists():
+                # Buscar en ruta alternativa
+                cert_path = Path(__file__).parent.parent.parent / TLS_CERT_PATH
+            
+            if not cert_path.exists():
+                _print_status(f"[ERROR] Certificado TLS no encontrado: {TLS_CERT_PATH}")
+                _print_status(f"[INFO] Desactiva TLS con USE_TLS=false en .env")
+                return
+            
+            context = ssl.create_default_context()
+            context.check_hostname = False  # Permitir IPs locales
+            context.verify_mode = ssl.CERT_REQUIRED
+            context.load_verify_locations(str(cert_path))
+            
+            client_ssl = context.wrap_socket(cliente, server_hostname=HOST)
+            client_ssl.connect((HOST, tcp_port))
+            client_ssl.sendall(dumps(new).encode("utf-8"))
+            client_ssl.close()
+            _print_status("[OK] Datos enviados con TLS")
+        else:
+            _print_status("[WARN] TLS desactivado - conexion sin cifrar")
+            cliente.connect((HOST, tcp_port))
+            cliente.sendall(dumps(new).encode("utf-8"))
+            cliente.close()
+            _print_status("[OK] Datos enviados (sin TLS)")
     except Exception as e:
         _print_status(f"[ERROR] Error al enviar datos: {e}")
 

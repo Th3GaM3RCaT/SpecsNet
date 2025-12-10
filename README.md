@@ -136,7 +136,7 @@ netstat -an | findstr 5256  # Verificar puerto disponible
 - Arquitectura completa del sistema
 - Estructura de base de datos
 - Desarrollo y debugging
-- Guías detalladas de compilación
+- Guías detalladas de compilación y uso
 - Patrones de seguridad implementados
 
 ---

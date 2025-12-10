@@ -69,6 +69,11 @@ SCAN_PER_SUBNET_TIMEOUT = float(os.getenv("SCAN_PER_SUBNET_TIMEOUT", "8.0"))
 SCAN_PROBE_TIMEOUT = float(os.getenv("SCAN_PROBE_TIMEOUT", "0.9"))
 PING_BATCH_SIZE = int(os.getenv("PING_BATCH_SIZE", "20"))
 
+# Configuración TLS/SSL
+USE_TLS = os.getenv("USE_TLS", "true").lower() in ("true", "1", "yes")
+TLS_CERT_PATH = os.getenv("TLS_CERT_PATH", "config/server.crt")
+TLS_KEY_PATH = os.getenv("TLS_KEY_PATH", "config/server.key")
+
 
 def generate_auth_token(secret: str | None = None) -> str:
     """Genera token de autenticación usando HMAC-SHA256.

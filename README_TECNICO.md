@@ -113,7 +113,10 @@ specs-python/
 │   └── REORGANIZACION.md            # Historial de reorganización
 │
 ├── 📂 config/                       # Configuración
-│   └── security_config.example.py   # Template de configuración de seguridad
+│   ├── security_config.example.py   # Template de configuración de seguridad
+│   ├── generar_certificado.py       # Generador de certificados TLS/SSL
+│   ├── server.crt                   # Certificado TLS (distribuir a clientes)
+│   └── server.key                   # Clave privada TLS (SOLO servidor)
 │
 ├── 📂 data/                         # Datos de runtime (ignorado por Git)
 │   ├── specs.db                     # Base de datos SQLite
@@ -137,32 +140,41 @@ cd specs-python
 
 # Ejecutar instalador automático
 .\scripts\install.ps1
+
+# Generar certificados TLS/SSL (SOLO en servidor)
+python config/generar_certificado.py
+
+# Distribuir certificado a clientes
+# Copiar config/server.crt a cada máquina cliente
+# NO copiar server.key (es privado del servidor)
 ```
 
 ### Ejecución
 
 ```powershell
-# Iniciar servidor (UI de gestión + servidor TCP)
+# Iniciar servidor (UI de gestión + servidor TCP+TLS)
 python run_servidor.py
 
 # Iniciar cliente daemon en segundo plano (escucha en puerto 5256)
 python run_cliente.py
 ```
 
-**Nota:** El servidor solicita activamente los datos a cada cliente. No es necesario que el cliente "envíe" manualmente - el daemon responde automáticamente a las solicitudes del servidor.
+**Nota:** El servidor solicita activamente los datos a cada cliente mediante conexiones TLS cifradas. No es necesario que el cliente "envíe" manualmente - el daemon responde automáticamente a las solicitudes del servidor.
 
 ## Arquitectura del Sistema
 
 ### 1. **Cliente (`src/specs.py` + `cliente_daemon.py`)**
 Daemon que se ejecuta en cada equipo de la red y **responde a solicitudes del servidor**.
 
+**🔒 Conexiones Seguras**: Todas las comunicaciones utilizan **TLS/SSL** para cifrado end-to-end.
+
 #### Modo de Ejecución:
-- **Daemon TCP** (puerto `5256`): `python run_cliente.py` o `python cliente_daemon.py`
+- **Daemon TCP+TLS** (puerto `5256`): `python run_cliente.py` o `python cliente_daemon.py`
   - Se ejecuta en segundo plano
-  - Escucha conexiones TCP en puerto 5256
+  - Escucha conexiones TCP cifradas en puerto 5256
   - Responde a comandos:
     - `PING`: Confirma que está vivo (`{'status': 'alive'}`)
-    - `GET_SPECS`: Recopila y envía especificaciones completas en JSON
+    - `GET_SPECS`: Recopila y envía especificaciones completas en JSON (cifrado)
 
 #### Datos Recopilados (al recibir GET_SPECS):
 - **Hardware**: Serial, Modelo, Procesador, GPU, RAM, Disco
@@ -173,9 +185,11 @@ Daemon que se ejecuta en cada equipo de la red y **responde a solicitudes del se
 ### 2. **Servidor (`src/mainServidor.py` + `src/logica/logica_servidor.py`)**
 Aplicación central que **solicita activamente** datos a los clientes y los almacena en la base de datos.
 
+**🔒 Conexiones Seguras**: El servidor utiliza **TLS/SSL** con certificados autofirmados para cifrar todas las comunicaciones.
+
 #### Componentes:
-- **Servidor TCP** (puerto `5255`): Recibe conexiones **pasivas** de clientes (deprecado, legacy)
-- **Cliente TCP** (puerto `5256`): **Solicita activamente** datos a cada cliente daemon
+- **Servidor TCP+TLS** (puerto `5255`): Recibe conexiones **pasivas** de clientes (deprecado, legacy)
+- **Cliente TCP+TLS** (puerto `5256`): **Solicita activamente** datos a cada cliente daemon (cifrado)
 - **Base de Datos**: SQLite (`data/specs.db`)
 - **Procesamiento**: Parsea JSON y DirectX, guarda en tablas normalizadas
 - **UI de Gestión**: Interfaz gráfica con tabla de dispositivos y funciones de administración
@@ -526,14 +540,56 @@ Esto mostrará la ventana de consola con los errores de Python.
 
 | Puerto | Protocolo | Uso | Dirección |
 |--------|-----------|-----|-----------|
-| `5256` | TCP | Cliente daemon (escucha solicitudes del servidor) | Clientes |
-| `5255` | TCP | Servidor legacy (recepción pasiva - deprecado) | Servidor |
+| `5256` | TCP+TLS | Cliente daemon (escucha solicitudes del servidor) | Clientes |
+| `5255` | TCP+TLS | Servidor legacy (recepción pasiva - deprecado) | Servidor |
 
 **Nueva Arquitectura:**
-- **Cliente**: Escucha en puerto `5256` esperando comandos (PING, GET_SPECS)
-- **Servidor**: Actúa como cliente TCP, conectándose a cada `IP:5256` para solicitar datos
+- **Cliente**: Escucha en puerto `5256` esperando comandos cifrados (PING, GET_SPECS)
+- **Servidor**: Actúa como cliente TCP+TLS, conectándose a cada `IP:5256` para solicitar datos
+- **Seguridad**: Todas las conexiones usan TLS/SSL con certificados autofirmados
 
-**Importante**: Firewall en **clientes** debe permitir entrada TCP en puerto `5256`.
+**Importante**: 
+- Firewall en **clientes** debe permitir entrada TCP en puerto `5256`
+- Certificado `server.crt` debe estar presente en `config/` de cada cliente
+- Clave privada `server.key` debe estar SOLO en el servidor
+
+## Configuración TLS/SSL
+
+### Generar Certificados (UNA vez en el servidor)
+
+```powershell
+# Ejecutar en el servidor
+python config/generar_certificado.py
+```
+
+Esto genera:
+- **`config/server.crt`**: Certificado público (distribuir a todos los clientes)
+- **`config/server.key`**: Clave privada (MANTENER SECRETO - solo en servidor)
+
+### Distribuir Certificado a Clientes
+
+```powershell
+# Copiar SOLO el certificado público a cada cliente
+Copy-Item config/server.crt \\CLIENTE\C$\ruta\specs-python\config\
+
+# NO copiar server.key (es privado del servidor)
+```
+
+### Características del Certificado
+
+- **Algoritmo**: RSA 4096 bits
+- **Firma**: SHA-256
+- **Validez**: 10 años
+- **Tipo**: Self-signed (X.509)
+
+### Desactivar TLS (solo para testing)
+
+En `.env` o variables de entorno:
+```bash
+USE_TLS=false
+```
+
+**⚠️ Advertencia**: Solo desactivar TLS en entornos de desarrollo controlados.
 
 ## Dependencias
 

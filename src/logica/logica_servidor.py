@@ -80,8 +80,6 @@ app = QApplication.instance()
 if app is None:
     app = QApplication(argv)
 
-# Almacenamiento de archivos JSON legacy (deprecado, SQLite es fuente de verdad)
-archivos_json = glob("*.json")
 # Lista de conexiones activas de clientes
 clientes = []
 # Contador de conexiones por IP (rate limiting)
@@ -107,22 +105,60 @@ class ServerManager:
         - Servidor solicita datos activamente conectándose a cliente:5256
         """
         try:
+            # Cargar configuración TLS
+            try:
+                from config.security_config import USE_TLS, TLS_CERT_PATH, TLS_KEY_PATH
+            except ImportError:
+                USE_TLS = True
+                TLS_CERT_PATH = "config/server.crt"
+                TLS_KEY_PATH = "config/server.key"
+            
             server_socket = socket(AF_INET, SOCK_STREAM)
             server_socket.bind((self.host, self.port))
             server_socket.listen()
             
-            context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            context.load_cert_chain("server.crt", "server.key")
-            print(f"[ServerManager] Servidor TCP escuchando en {self.host}:{self.port}")
+            context = None
+            if USE_TLS:
+                from pathlib import Path
+                cert_path = Path(TLS_CERT_PATH)
+                key_path = Path(TLS_KEY_PATH)
+                
+                if not cert_path.exists():
+                    cert_path = Path(__file__).parent.parent.parent / TLS_CERT_PATH
+                    key_path = Path(__file__).parent.parent.parent / TLS_KEY_PATH
+                
+                if not cert_path.exists() or not key_path.exists():
+                    print(f"[ERROR] Certificados TLS no encontrados!")
+                    print(f"  Certificado: {cert_path}")
+                    print(f"  Clave: {key_path}")
+                    print(f"  Ejecuta: python config/generar_certificado.py")
+                    print(f"  O desactiva TLS con USE_TLS=false en .env")
+                    return
+                
+                context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                context.load_cert_chain(str(cert_path), str(key_path))
+                print(f"[ServerManager] Servidor TCP+TLS escuchando en {self.host}:{self.port}")
+            else:
+                print(f"[ServerManager] Servidor TCP escuchando en {self.host}:{self.port}")
+                print(f"[WARN] TLS DESACTIVADO - conexiones sin cifrar")
 
             # Loop de aceptación (bloqueante)
             while True:
                 conn, addr = server_socket.accept()
                 
-                conn_ssl = context.wrap_socket(conn, server_side=True)
-                clientes.append(conn_ssl)
-                hilo = Thread(target=consultar_informacion, args=(conn_ssl, addr), daemon=True)
-                hilo.start()
+                if USE_TLS and context:
+                    try:
+                        conn_ssl = context.wrap_socket(conn, server_side=True)
+                        clientes.append(conn_ssl)
+                        hilo = Thread(target=consultar_informacion, args=(conn_ssl, addr), daemon=True)
+                        hilo.start()
+                    except ssl.SSLError as e:
+                        print(f"[ERROR] SSL desde {addr[0]}: {e}")
+                        conn.close()
+                else:
+                    clientes.append(conn)
+                    hilo = Thread(target=consultar_informacion, args=(conn, addr), daemon=True)
+                    hilo.start()
         except Exception as e:
             print(f"[ServerManager] Error al iniciar servidor TCP: {e}")
             raise
