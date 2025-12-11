@@ -209,7 +209,11 @@ def preparar_datos_completos():
             _print_status("[OK] Informe DirectX incluido")
         else:
             _print_status("[WARN] No se encontro dxdiag_output.txt")
-            _print_status("[INFO] Ejecuta datos/informeDirectX.py para generarlo")
+            from datos.informeDirectX import get_from_inform
+            get_from_inform()
+            with open(dxdiag_file, "r", encoding="cp1252") as f:
+                new["dxdiag_output_txt"] = f.read()
+            _print_status("[OK] Informe DirectX incluido")
     except Exception as e:
         _print_status(f"[ERROR] Error leyendo DirectX: {e}")
 

@@ -36,10 +36,10 @@ class Ui_MainWindow(object):
         MainWindow.setMaximumSize(QSize(700, 16777215))
         icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.DocumentPrint))
         MainWindow.setWindowIcon(icon)
-        self.actionProgramar_hora_de_ejecuci_n = QAction(MainWindow)
-        self.actionProgramar_hora_de_ejecuci_n.setObjectName(u"actionProgramar_hora_de_ejecuci_n")
-        self.actionDetener_ejecuci_n = QAction(MainWindow)
-        self.actionDetener_ejecuci_n.setObjectName(u"actionDetener_ejecuci_n")
+        self.actionScheduleTaskTime = QAction(MainWindow)
+        self.actionScheduleTaskTime.setObjectName(u"actionProgramar_hora_de_ejecuci_n")
+        self.actionCancelTask = QAction(MainWindow)
+        self.actionCancelTask.setObjectName(u"actionDetener_ejecuci_n")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_3 = QVBoxLayout(self.centralwidget)
@@ -130,8 +130,8 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
 
         self.menubar.addAction(self.menuOpciones.menuAction())
-        self.menuOpciones.addAction(self.actionProgramar_hora_de_ejecuci_n)
-        self.menuOpciones.addAction(self.actionDetener_ejecuci_n)
+        self.menuOpciones.addAction(self.actionScheduleTaskTime)
+        self.menuOpciones.addAction(self.actionCancelTask)
 
         self.retranslateUi(MainWindow)
 
@@ -140,8 +140,8 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Specs", None))
-        self.actionProgramar_hora_de_ejecuci_n.setText(QCoreApplication.translate("MainWindow", u"Programar hora de ejecuci\u00f3n", None))
-        self.actionDetener_ejecuci_n.setText(QCoreApplication.translate("MainWindow", u"Detener ejecuci\u00f3n", None))
+        self.actionScheduleTaskTime.setText(QCoreApplication.translate("MainWindow", u"Programar hora de ejecuci\u00f3n", None))
+        self.actionCancelTask.setText(QCoreApplication.translate("MainWindow", u"Detener ejecuci\u00f3n", None))
         self.title_textLabel.setText(QCoreApplication.translate("MainWindow", u"Informe de especificaciones del dispositivo", None))
         self.info_label.setText(QCoreApplication.translate("MainWindow", u"Genere el informe para continuar...", None))
 #if QT_CONFIG(tooltip)

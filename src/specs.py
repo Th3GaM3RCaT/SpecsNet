@@ -21,7 +21,6 @@ def escuchar_solicitudes(port=5256):
     Note:
         El servidor puede solicitar datos activamente conectándose a este puerto.
     """
-    from logica.logica_specs import new
 
     print(f"[DAEMON] Cliente escuchando solicitudes en puerto {port}...")
     from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, timeout
@@ -52,17 +51,9 @@ def escuchar_solicitudes(port=5256):
 
                     if data == "GET_SPECS":
                         print("[PROCESO] Recopilando especificaciones...")
-
-                        # Usar función compartida que incluye informe + DirectX
-                        from logica.logica_specs import preparar_datos_completos
-
-                        preparar_datos_completos()
-
-                        print("[OK] Datos recopilados")
-
-                        json_data = dumps(new, ensure_ascii=False)
-                        conn.sendall(json_data.encode("utf-8"))
-                        print(f"[OK] Enviados {len(json_data)} bytes\n")
+                        from logica.logica_specs import enviar_a_servidor
+                        enviar_a_servidor()
+                        print("[OK] Datos enviados")
 
                     elif data == "PING":
                         response = {"status": "alive"}
@@ -146,10 +137,10 @@ else:
             """Inicializa señales y conexiones de la UI."""
             self.run_button.clicked.connect(self.iniciar_informe)
             self.send_button.clicked.connect(self.enviar)
-            self.actionDetener_ejecuci_n.triggered.connect(
+            self.actionCancelTask.triggered.connect(
                 lambda: lsp.configurar_tarea(2)
             )
-            self.actionProgramar_hora_de_ejecuci_n.triggered.connect(
+            self.actionScheduleTaskTime.triggered.connect(
                 lambda: lsp.configurar_tarea(0)
             )
 
