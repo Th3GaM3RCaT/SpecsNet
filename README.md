@@ -9,7 +9,7 @@ Sistema cliente-servidor para Windows que recopila automáticamente especificaci
 ## Requisitos Previos
 
 - **Sistema Operativo**: Windows 10/11
-- **Python**: 3.13 o superior
+- **Python**: 3.13
 - **Red**: Equipos en misma LAN o con conectividad TCP directa
 
 ---
