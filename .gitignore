@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.github/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.autosave
+upload_release_asset.ps1
+
+*test*
+*prueba*
+
+# PyInstaller
+*.spec
+*.manifest
+
+# Data files (runtime)
+*.db
+*.db-journal
+*.sqlite3
+*.csv
+*.json
+*.log
+
+# Output directory (temporary/generated files)
+output/*
+!output/README.md
+
+# Images (except docs)
+*.png
+!docs/**/*.png
+
+# Database models
+*.dmm
+
+# Environment
+.env
+.env.local
+
+# Security - NEVER commit these files
+config/security_config.py  # Contains SHARED_SECRET
+*.pfx                      # Certificate files
+*.p12                      # Certificate files
+*.cer                      # Certificate files
+certs/                     # Certificate directory
+*.crt
+*.key
+
+
+# Legacy files to ignore
+otros/
+ipAddress.py
+server_config.json
+src/logica/escaneo_exhaustivo.py
