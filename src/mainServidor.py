@@ -147,6 +147,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
         # Iniciar servidor en segundo plano
         self.iniciar_servidor()
+        self.cargar_datos_iniciales()
 
         # Timer para verificación automática de estados cada 20 segundos
         self.timer_estados = QtCore.QTimer(self)
