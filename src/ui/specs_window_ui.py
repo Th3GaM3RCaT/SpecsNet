@@ -8,23 +8,61 @@
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
-from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
-    QMetaObject, QObject, QPoint, QRect,
-    QSize, QTime, QUrl, Qt)
-from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
-    QCursor, QFont, QFontDatabase, QGradient,
-    QIcon, QImage, QKeySequence, QLinearGradient,
-    QPainter, QPalette, QPixmap, QRadialGradient,
-    QTransform)
-from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout,
-    QLabel, QMainWindow, QMenu, QMenuBar,
-    QPushButton, QScrollArea, QSizePolicy, QStatusBar,
-    QVBoxLayout, QWidget)
+from PySide6.QtCore import (
+    QCoreApplication,
+    QDate,
+    QDateTime,
+    QLocale,
+    QMetaObject,
+    QObject,
+    QPoint,
+    QRect,
+    QSize,
+    QTime,
+    QUrl,
+    Qt,
+)
+from PySide6.QtGui import (
+    QAction,
+    QBrush,
+    QColor,
+    QConicalGradient,
+    QCursor,
+    QFont,
+    QFontDatabase,
+    QGradient,
+    QIcon,
+    QImage,
+    QKeySequence,
+    QLinearGradient,
+    QPainter,
+    QPalette,
+    QPixmap,
+    QRadialGradient,
+    QTransform,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QMenuBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
-            MainWindow.setObjectName(u"MainWindow")
+            MainWindow.setObjectName("MainWindow")
         MainWindow.setEnabled(True)
         MainWindow.resize(355, 500)
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
@@ -37,46 +75,53 @@ class Ui_MainWindow(object):
         icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.DocumentPrint))
         MainWindow.setWindowIcon(icon)
         self.actionScheduleTaskTime = QAction(MainWindow)
-        self.actionScheduleTaskTime.setObjectName(u"actionScheduleTaskTime")
+        self.actionScheduleTaskTime.setObjectName("actionScheduleTaskTime")
         self.actionCancelTask = QAction(MainWindow)
-        self.actionCancelTask.setObjectName(u"actionCancelTask")
+        self.actionCancelTask.setObjectName("actionCancelTask")
         self.centralwidget = QWidget(MainWindow)
-        self.centralwidget.setObjectName(u"centralwidget")
+        self.centralwidget.setObjectName("centralwidget")
         self.verticalLayout_3 = QVBoxLayout(self.centralwidget)
-        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
+        self.verticalLayout_3.setObjectName("verticalLayout_3")
         self.frame_2 = QFrame(self.centralwidget)
-        self.frame_2.setObjectName(u"frame_2")
+        self.frame_2.setObjectName("frame_2")
         self.frame_2.setMinimumSize(QSize(0, 157))
         self.frame_2.setFrameShape(QFrame.Shape.StyledPanel)
         self.frame_2.setFrameShadow(QFrame.Shadow.Raised)
         self.verticalLayout_2 = QVBoxLayout(self.frame_2)
-        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.title_textLabel = QLabel(self.frame_2)
-        self.title_textLabel.setObjectName(u"title_textLabel")
+        self.title_textLabel.setObjectName("title_textLabel")
 
         self.verticalLayout_2.addWidget(self.title_textLabel)
 
         self.info_scrollArea = QScrollArea(self.frame_2)
-        self.info_scrollArea.setObjectName(u"info_scrollArea")
+        self.info_scrollArea.setObjectName("info_scrollArea")
         self.info_scrollArea.setEnabled(True)
-        self.info_scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.info_scrollArea.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        )
         self.info_scrollArea.setWidgetResizable(True)
         self.info_scrollAreaWidgetContents = QWidget()
-        self.info_scrollAreaWidgetContents.setObjectName(u"info_scrollAreaWidgetContents")
+        self.info_scrollAreaWidgetContents.setObjectName(
+            "info_scrollAreaWidgetContents"
+        )
         self.info_scrollAreaWidgetContents.setEnabled(True)
         self.info_scrollAreaWidgetContents.setGeometry(QRect(0, 0, 301, 345))
         self.formLayout = QFormLayout(self.info_scrollAreaWidgetContents)
-        self.formLayout.setObjectName(u"formLayout")
+        self.formLayout.setObjectName("formLayout")
         self.widget = QWidget(self.info_scrollAreaWidgetContents)
-        self.widget.setObjectName(u"widget")
+        self.widget.setObjectName("widget")
 
         self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.widget)
 
         self.info_label = QLabel(self.info_scrollAreaWidgetContents)
-        self.info_label.setObjectName(u"info_label")
+        self.info_label.setObjectName("info_label")
         self.info_label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.info_label.setWordWrap(False)
-        self.info_label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse|Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.info_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
+            | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
 
         self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.info_label)
 
@@ -84,18 +129,17 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2.addWidget(self.info_scrollArea)
 
-
         self.verticalLayout_3.addWidget(self.frame_2)
 
         self.frame = QFrame(self.centralwidget)
-        self.frame.setObjectName(u"frame")
+        self.frame.setObjectName("frame")
         self.frame.setMaximumSize(QSize(337, 44))
         self.frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.frame.setFrameShadow(QFrame.Shadow.Raised)
         self.horizontalLayout = QHBoxLayout(self.frame)
-        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.horizontalLayout.setObjectName("horizontalLayout")
         self.run_button = QPushButton(self.frame)
-        self.run_button.setObjectName(u"run_button")
+        self.run_button.setObjectName("run_button")
         sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
@@ -107,25 +151,26 @@ class Ui_MainWindow(object):
         self.horizontalLayout.addWidget(self.run_button)
 
         self.send_button = QPushButton(self.frame)
-        self.send_button.setObjectName(u"send_button")
+        self.send_button.setObjectName("send_button")
         self.send_button.setEnabled(False)
         self.send_button.setMaximumSize(QSize(80, 16777215))
 
-        self.horizontalLayout.addWidget(self.send_button, 0, Qt.AlignmentFlag.AlignRight)
-
+        self.horizontalLayout.addWidget(
+            self.send_button, 0, Qt.AlignmentFlag.AlignRight
+        )
 
         self.verticalLayout_3.addWidget(self.frame)
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
-        self.menubar.setObjectName(u"menubar")
+        self.menubar.setObjectName("menubar")
         self.menubar.setEnabled(True)
         self.menubar.setGeometry(QRect(0, 0, 355, 21))
         self.menuOpciones = QMenu(self.menubar)
-        self.menuOpciones.setObjectName(u"menuOpciones")
+        self.menuOpciones.setObjectName("menuOpciones")
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
-        self.statusbar.setObjectName(u"statusbar")
+        self.statusbar.setObjectName("statusbar")
         self.statusbar.setEnabled(True)
         MainWindow.setStatusBar(self.statusbar)
 
@@ -136,25 +181,48 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
 
         QMetaObject.connectSlotsByName(MainWindow)
+
     # setupUi
 
     def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Specs", None))
-        self.actionScheduleTaskTime.setText(QCoreApplication.translate("MainWindow", u"Programar hora de ejecuci\u00f3n", None))
-        self.actionCancelTask.setText(QCoreApplication.translate("MainWindow", u"Detener ejecuci\u00f3n", None))
-        self.title_textLabel.setText(QCoreApplication.translate("MainWindow", u"Informe de especificaciones del dispositivo", None))
-        self.info_label.setText(QCoreApplication.translate("MainWindow", u"Genere el informe para continuar...", None))
-#if QT_CONFIG(tooltip)
+        MainWindow.setWindowTitle(
+            QCoreApplication.translate("MainWindow", "Specs", None)
+        )
+        self.actionScheduleTaskTime.setText(
+            QCoreApplication.translate(
+                "MainWindow", "Programar hora de ejecuci\u00f3n", None
+            )
+        )
+        self.actionCancelTask.setText(
+            QCoreApplication.translate("MainWindow", "Detener ejecuci\u00f3n", None)
+        )
+        self.title_textLabel.setText(
+            QCoreApplication.translate(
+                "MainWindow", "Informe de especificaciones del dispositivo", None
+            )
+        )
+        self.info_label.setText(
+            QCoreApplication.translate(
+                "MainWindow", "Genere el informe para continuar...", None
+            )
+        )
+        # if QT_CONFIG(tooltip)
         self.run_button.setToolTip("")
-#endif // QT_CONFIG(tooltip)
-#if QT_CONFIG(whatsthis)
+        # endif // QT_CONFIG(tooltip)
+        # if QT_CONFIG(whatsthis)
         self.run_button.setWhatsThis("")
-#endif // QT_CONFIG(whatsthis)
-        self.run_button.setText(QCoreApplication.translate("MainWindow", u"Generar informe", None))
-#if QT_CONFIG(shortcut)
+        # endif // QT_CONFIG(whatsthis)
+        self.run_button.setText(
+            QCoreApplication.translate("MainWindow", "Generar informe", None)
+        )
+        # if QT_CONFIG(shortcut)
         self.run_button.setShortcut("")
-#endif // QT_CONFIG(shortcut)
-        self.send_button.setText(QCoreApplication.translate("MainWindow", u"Enviar", None))
-        self.menuOpciones.setTitle(QCoreApplication.translate("MainWindow", u"Opciones", None))
-    # retranslateUi
+        # endif // QT_CONFIG(shortcut)
+        self.send_button.setText(
+            QCoreApplication.translate("MainWindow", "Enviar", None)
+        )
+        self.menuOpciones.setTitle(
+            QCoreApplication.translate("MainWindow", "Opciones", None)
+        )
 
+    # retranslateUi

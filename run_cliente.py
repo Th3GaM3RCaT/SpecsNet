@@ -20,4 +20,5 @@ if __name__ == "__main__":
 
     # Importar specs como módulo y ejecutar main()
     from specs import main
+
     main()

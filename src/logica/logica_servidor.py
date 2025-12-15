@@ -112,21 +112,22 @@ class ServerManager:
                 USE_TLS = True
                 TLS_CERT_PATH = "config/server.crt"
                 TLS_KEY_PATH = "config/server.key"
-            
+
             server_socket = socket(AF_INET, SOCK_STREAM)
             server_socket.bind((self.host, self.port))
             server_socket.listen()
-            
+
             context = None
             if USE_TLS:
                 from pathlib import Path
+
                 cert_path = Path(TLS_CERT_PATH)
                 key_path = Path(TLS_KEY_PATH)
-                
+
                 if not cert_path.exists():
                     cert_path = Path(__file__).parent.parent.parent / TLS_CERT_PATH
                     key_path = Path(__file__).parent.parent.parent / TLS_KEY_PATH
-                
+
                 if not cert_path.exists() or not key_path.exists():
                     print(f"[ERROR] Certificados TLS no encontrados!")
                     print(f"  Certificado: {cert_path}")
@@ -134,34 +135,45 @@ class ServerManager:
                     print(f"  Ejecuta: python config/generar_certificado.py")
                     print(f"  O desactiva TLS con USE_TLS=false en .env")
                     return
-                
+
                 context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
                 context.load_cert_chain(str(cert_path), str(key_path))
-                print(f"[ServerManager] Servidor TCP+TLS escuchando en {self.host}:{self.port}")
+                print(
+                    f"[ServerManager] Servidor TCP+TLS escuchando en {self.host}:{self.port}"
+                )
             else:
-                print(f"[ServerManager] Servidor TCP escuchando en {self.host}:{self.port}")
+                print(
+                    f"[ServerManager] Servidor TCP escuchando en {self.host}:{self.port}"
+                )
                 print(f"[WARN] TLS DESACTIVADO - conexiones sin cifrar")
 
             # Loop de aceptación (bloqueante)
             while True:
                 conn, addr = server_socket.accept()
-                
+
                 if USE_TLS and context:
                     try:
                         conn_ssl = context.wrap_socket(conn, server_side=True)
                         clientes.append(conn_ssl)
-                        hilo = Thread(target=consultar_informacion, args=(conn_ssl, addr), daemon=True)
+                        hilo = Thread(
+                            target=consultar_informacion,
+                            args=(conn_ssl, addr),
+                            daemon=True,
+                        )
                         hilo.start()
                     except ssl.SSLError as e:
                         print(f"[ERROR] SSL desde {addr[0]}: {e}")
                         conn.close()
                 else:
                     clientes.append(conn)
-                    hilo = Thread(target=consultar_informacion, args=(conn, addr), daemon=True)
+                    hilo = Thread(
+                        target=consultar_informacion, args=(conn, addr), daemon=True
+                    )
                     hilo.start()
         except Exception as e:
             print(f"[ServerManager] Error al iniciar servidor TCP: {e}")
             raise
+
 
 class Monitor:
     """Encapsula funciones de verificación/consulta de dispositivos.
@@ -198,7 +210,7 @@ class Scanner:
         `discovered_devices.csv` en la raíz o en `output/`.
         """
         print("=== Iniciando escaneo de red ===")
-        #scan.main(callback_progreso=callback_progreso)
+        # scan.main(callback_progreso=callback_progreso)
         # Determinar CSV generado
         project_root = Path(__file__).parent.parent.parent
         output_dir = project_root / "output"
@@ -263,9 +275,7 @@ class Scanner:
                             ip,
                             False,
                         )
-                        sql.setDevice(
-                            datos_basicos, conn
-                        )  # Pasar conexión thread-safe
+                        sql.setDevice(datos_basicos, conn)  # Pasar conexión thread-safe
                         inserted += 1
                     else:
                         serial_existente = existe[0]
@@ -311,7 +321,7 @@ class Scanner:
         # Construir lista de rangos en formato esperado
         rango = f"{start_ip}-{end_ip}"
         print(f"[Scanner] Ejecutando escaneo para rangos {rango}")
-        
+
         try:
             # Llamar a main pasando los rangos directamente
             print("[Scanner] Llamando a scan.main...")
@@ -321,6 +331,7 @@ class Scanner:
         except Exception as e:
             print(f"[Scanner] Error durante escaneo: {e}")
             from traceback import print_exc
+
             print_exc()
             return []
 
@@ -548,21 +559,21 @@ def detectar_cambios_hardware(serial, json_data, thread_conn):
         - Se ejecuta ANTES de actualizar los datos
     """
     from datetime import datetime
-    
+
     cur = thread_conn.cursor()
-    
+
     # Obtener datos actuales del dispositivo
     cur.execute(
         """SELECT processor, GPU, RAM, disk, license_status, ip, user 
            FROM Dispositivos WHERE serial = ?""",
-        (serial,)
+        (serial,),
     )
     datos_actuales = cur.fetchone()
-    
+
     if not datos_actuales:
         # Nuevo dispositivo, no hay cambios previos
         return False
-    
+
     # Extraer datos nuevos del JSON
     processor_nuevo = json_data.get("Processor", "")
     gpu_nuevo = json_data.get("Display Adapter", "")
@@ -571,10 +582,12 @@ def detectar_cambios_hardware(serial, json_data, thread_conn):
     license_nuevo = json_data.get("license_status", False)
     ip_nuevo = json_data.get("client_ip", "")
     user_nuevo = json_data.get("User", "")
-    
+
     # Comparar con datos anteriores
-    (processor_ant, gpu_ant, ram_ant, disk_ant, license_ant, ip_ant, user_ant) = datos_actuales
-    
+    (processor_ant, gpu_ant, ram_ant, disk_ant, license_ant, ip_ant, user_ant) = (
+        datos_actuales
+    )
+
     # Detectar cambios (ignorar espacios y mayúsculas)
     cambios = [
         processor_nuevo.strip() != (processor_ant or "").strip(),
@@ -585,7 +598,7 @@ def detectar_cambios_hardware(serial, json_data, thread_conn):
         ip_nuevo != ip_ant,
         user_nuevo != user_ant,
     ]
-    
+
     if any(cambios):
         print(f"[CAMBIO DETECTADO] Dispositivo {serial}:")
         if cambios[0]:
@@ -602,15 +615,22 @@ def detectar_cambios_hardware(serial, json_data, thread_conn):
             print(f"  IP: {ip_ant} -> {ip_nuevo}")
         if cambios[6]:
             print(f"  Usuario: {user_ant} -> {user_nuevo}")
-        
+
         # Registrar el cambio en la BD
         sql.registrar_cambio_hardware(
-            serial, user_nuevo, processor_nuevo, gpu_nuevo, ram_nuevo, 
-            disk_nuevo, license_nuevo, ip_nuevo, thread_conn
+            serial,
+            user_nuevo,
+            processor_nuevo,
+            gpu_nuevo,
+            ram_nuevo,
+            disk_nuevo,
+            license_nuevo,
+            ip_nuevo,
+            thread_conn,
         )
-        
+
         return True
-    
+
     return False
 
 
@@ -670,7 +690,7 @@ def consultar_informacion(conn, addr):
             # Intentar decodificar y parsear cuando tengamos datos completos
             try:
                 json_data = loads(buffer.decode("utf-8"))
-                
+
                 thread_conn = sql.get_thread_safe_connection()
                 # SECURITY: Validar autenticación
                 if SECURITY_ENABLED:
@@ -714,16 +734,24 @@ def consultar_informacion(conn, addr):
                 if dispositivo_existente:
                     serial_db = dispositivo_existente[0]
                     mac_db = dispositivo_existente[1]
-                    
-                    print(f"[INFO] Dispositivo encontrado en DB: serial={serial_db}, MAC={mac_db}")
-                    
+
+                    print(
+                        f"[INFO] Dispositivo encontrado en DB: serial={serial_db}, MAC={mac_db}"
+                    )
+
                     # Usar el serial de la DB para actualizar (mantener identidad del registro)
                     serial_a_usar = serial_db
-                    
+
                     # Si el serial del cliente es real (no temporal) y difiere del de la DB, actualizar
-                    if serial_cliente and not serial_cliente.startswith("TEMP") and serial_cliente != serial_db:
-                        print(f"[UPDATE] Actualizando serial de {serial_db} a {serial_cliente}")
-                        
+                    if (
+                        serial_cliente
+                        and not serial_cliente.startswith("TEMP")
+                        and serial_cliente != serial_db
+                    ):
+                        print(
+                            f"[UPDATE] Actualizando serial de {serial_db} a {serial_cliente}"
+                        )
+
                         # Actualizar serial en todas las tablas relacionadas
                         sql.cursor.execute(
                             "UPDATE Dispositivos SET serial = ? WHERE serial = ?",
@@ -754,7 +782,7 @@ def consultar_informacion(conn, addr):
                             (serial_cliente, serial_db),
                         )
                         sql.connection.commit()
-                        
+
                         # Ahora usar el serial actualizado
                         serial_a_usar = serial_cliente
                 else:
@@ -762,24 +790,32 @@ def consultar_informacion(conn, addr):
                     if not serial_cliente or serial_cliente.strip() == "":
                         # Generar serial temporal
                         if mac:
-                            serial_a_usar = f"TEMP_{mac.replace(':', '').replace('-', '')}"
-                            print(f"[WARN] Cliente sin serial, usando temporal: {serial_a_usar}")
+                            serial_a_usar = (
+                                f"TEMP_{mac.replace(':', '').replace('-', '')}"
+                            )
+                            print(
+                                f"[WARN] Cliente sin serial, usando temporal: {serial_a_usar}"
+                            )
                         else:
                             serial_a_usar = f"TEMP_{ip.replace('.', '')}"
-                            print(f"[WARN] Cliente sin serial ni MAC, usando temporal basado en IP: {serial_a_usar}")
+                            print(
+                                f"[WARN] Cliente sin serial ni MAC, usando temporal basado en IP: {serial_a_usar}"
+                            )
 
                 # Reconstruir tupla con el serial correcto
                 datos_dispositivo = (serial_a_usar,) + datos_dispositivo[1:]
-                
+
                 # Insertar/actualizar dispositivo (UPSERT por serial)
                 sql.setDevice(datos_dispositivo, thread_conn)
                 print(f"Dispositivo {serial_a_usar} guardado en DB")
-                
+
                 # Detectar cambios de hardware vs estado anterior
                 detectar_cambios_hardware(serial_a_usar, json_data, thread_conn)
 
                 # Actualizar estado activo
-                sql.setActive((serial_a_usar, True, datetime.now().isoformat()), thread_conn)
+                sql.setActive(
+                    (serial_a_usar, True, datetime.now().isoformat()), thread_conn
+                )
                 # Guardar módulos RAM
                 modulos_ram = parsear_modulos_ram(json_data)
                 for i, modulo in enumerate(modulos_ram, 1):
@@ -805,12 +841,15 @@ def consultar_informacion(conn, addr):
                 dxdiag_txt = json_data.get("dxdiag_output_txt", "")
                 json_str = dumps(json_data, indent=2)
                 sql.setInformeDiagnostico(
-                    (serial_a_usar, json_str, dxdiag_txt, datetime.now().isoformat()), thread_conn
+                    (serial_a_usar, json_str, dxdiag_txt, datetime.now().isoformat()),
+                    thread_conn,
                 )
 
                 # Commit cambios
                 thread_conn.commit()
-                print(f"[OK] Datos del dispositivo {serial_a_usar} guardados exitosamente")
+                print(
+                    f"[OK] Datos del dispositivo {serial_a_usar} guardados exitosamente"
+                )
 
                 # Opcional: guardar backup en JSON para debug
                 try:
@@ -879,6 +918,7 @@ def main():
     except Exception as e:
         print(f"[ERROR] Error en servidor: {e}")
         server_socket.close()
+
 
 def cargar_ips_desde_csv(archivo_csv=None):
     """
@@ -951,6 +991,7 @@ def cargar_ips_desde_csv(archivo_csv=None):
     except Exception as e:
         print(f"Error leyendo CSV: {e}")
         return []
+
 
 async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
     """Solicita especificaciones a un cliente específico mediante GET_SPECS (ASÍNCRONO).
@@ -1056,9 +1097,7 @@ async def solicitar_datos_cliente(client_ip, client_port=5256, timeout=30):
                 print(f"        -> Dispositivo guardado: {datos_dispositivo}")
 
                 # Actualizar estado activo
-                sql.setActive(
-                    (serial, True, datetime.now().isoformat()), thread_conn
-                )
+                sql.setActive((serial, True, datetime.now().isoformat()), thread_conn)
                 print(f"        -> Estado activo guardado")
 
                 # Guardar módulos RAM
@@ -1264,6 +1303,7 @@ def consultar_dispositivos_desde_csv(archivo_csv=None, callback_progreso=None):
     print(f"\n=== Consulta finalizada: {activos}/{total} dispositivos activos ===\n")
     return activos, total
 
+
 def obtener_dispositivos_db():
     """
     Obtiene todos los dispositivos de la base de datos.
@@ -1325,18 +1365,23 @@ def monitorear_dispositivos_periodicamente(
                 # Hacer ping al dispositivo
                 try:
                     from subprocess import run, CREATE_NO_WINDOW
+
                     thread_conn = sql.get_thread_safe_connection()
                     ping_result = run(
                         ["ping", "-n", "1", "-w", "1000", ip],
                         capture_output=True,
                         creationflags=CREATE_NO_WINDOW,
                     )
-                    print(f"  [PING] {ip}: {ping_result.stdout.decode('utf-8').strip()}")
+                    print(
+                        f"  [PING] {ip}: {ping_result.stdout.decode('utf-8').strip()}"
+                    )
 
                     esta_activo = ping_result.returncode == 0
 
                     # Actualizar estado en DB
-                    sql.setActive((serial, esta_activo, datetime.now().isoformat()),thread_conn)
+                    sql.setActive(
+                        (serial, esta_activo, datetime.now().isoformat()), thread_conn
+                    )
                     thread_conn.commit()
                     thread_conn.close()
 
@@ -1349,7 +1394,9 @@ def monitorear_dispositivos_periodicamente(
                 except Exception as e:
                     print(f"  {ip} ({serial}): Error - {e}")
                     thread_conn = sql.get_thread_safe_connection()
-                    sql.setActive((serial, False, datetime.now().isoformat()), thread_conn)
+                    sql.setActive(
+                        (serial, False, datetime.now().isoformat()), thread_conn
+                    )
                     thread_conn.commit()
                     thread_conn.close()
 

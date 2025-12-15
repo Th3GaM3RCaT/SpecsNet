@@ -2,8 +2,11 @@ import sys
 import sqlite3
 from typing import Literal, Optional
 
+
 def get_thread_safe_connection():
-        return sqlite3.connect(DB_PATH, check_same_thread=False)
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+
 # Inicializar base de datos
 def inicializar_db():
     """Crea las tablas de la base de datos si no existen."""
@@ -62,9 +65,6 @@ else:
 
 connection = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = connection.cursor()
-
-
-
 
 
 # pasar todas las consultas sql solo con esta funcion
@@ -140,7 +140,8 @@ def setaplication(aplicacion=tuple(), conn=None):
         cur.execute(
             """INSERT INTO aplicaciones 
                        (Dispositivos_serial, name, version, publisher)
-                       VALUES (?,?,?,?)""",aplicacion,
+                       VALUES (?,?,?,?)""",
+            aplicacion,
         )
 
 
@@ -161,7 +162,7 @@ def setAlmacenamiento(almacenamiento=tuple(), indice=1, conn=None):
     cur = conn.cursor() if conn else cursor
     serial_dispositivo = almacenamiento[0]
     nombre_disco = almacenamiento[1]
-    
+
     # Verificar si ya existe por nombre y capacidad
     sql, params = abrir_consulta(
         "almacenamiento-select.sql",
@@ -170,7 +171,7 @@ def setAlmacenamiento(almacenamiento=tuple(), indice=1, conn=None):
     cur.execute(sql, params)
     if cur.fetchone():
         return  # Ya existe, no duplicar
-    
+
     # NUEVO DISCO: Marcar discos anteriores como desactivados
     # Si es el primero en la lista (indice=1), todos los demás pasan a actual=False
     if indice <= 1:
@@ -185,7 +186,8 @@ def setAlmacenamiento(almacenamiento=tuple(), indice=1, conn=None):
     cur.execute(
         """INSERT INTO almacenamiento 
            (Dispositivos_serial, nombre, capacidad, tipo, actual, fecha_instalacion)
-           VALUES (?,?,?,?,?,?)""",almacenamiento,
+           VALUES (?,?,?,?,?,?)""",
+        almacenamiento,
     )
 
 
@@ -206,13 +208,15 @@ def setMemoria(memoria=tuple(), indice=1, conn=None):
     cur = conn.cursor() if conn else cursor
     serial_dispositivo = memoria[0]
     numero_serie_ram = memoria[5]
-    
+
     # Verificar si ya existe por número de serie
-    sql, params = abrir_consulta("memoria-select.sql", {"numero_serie": numero_serie_ram})
+    sql, params = abrir_consulta(
+        "memoria-select.sql", {"numero_serie": numero_serie_ram}
+    )
     cur.execute(sql, params)
     if cur.fetchone():
         return  # Ya existe con el mismo serial, no duplicar
-    
+
     # NUEVO MÓDULO: Marcar módulos anteriores como desactivados
     # Si es el primero en la lista (indice=1), todos los demás pasan a actual=False
     if indice <= 1:
@@ -222,7 +226,7 @@ def setMemoria(memoria=tuple(), indice=1, conn=None):
                WHERE Dispositivos_serial = ? AND actual = 1""",
             (serial_dispositivo,),
         )
-    
+
     # Insertar nuevo módulo de memoria con actual=True
     cur.execute(
         """INSERT INTO memoria 
@@ -242,11 +246,12 @@ def setInformeDiagnostico(informes=tuple(), conn=None):
     Returns:
         None
     """
-    cur = conn.cursor() if conn else cursor 
+    cur = conn.cursor() if conn else cursor
     cur.execute(
         """INSERT INTO informacion_diagnostico 
                    (Dispositivos_serial, json_diagnostico, reporteDirectX, fecha)
-                   VALUES (?,?,?,?)""",informes,
+                   VALUES (?,?,?,?)""",
+        informes,
     )
 
 
@@ -266,7 +271,8 @@ def setRegistro_cambios(registro=tuple(), conn=None):
     cur.execute(
         """INSERT INTO registro_cambios 
                    (Dispositivos_serial, user, processor, GPU, RAM, disk, license_status, ip, date)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",registro,
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+        registro,
     )
 
 
@@ -452,7 +458,9 @@ def set_dispositivo_inicial(ip, mac):
     connection.commit()
 
 
-def registrar_cambio_hardware(serial, user, processor, gpu, ram, disk, license_status, ip, conn=None):
+def registrar_cambio_hardware(
+    serial, user, processor, gpu, ram, disk, license_status, ip, conn=None
+):
     """Registra un cambio de hardware/software en el histórico.
 
     Args:
@@ -472,21 +480,21 @@ def registrar_cambio_hardware(serial, user, processor, gpu, ram, disk, license_s
         - Se ejecuta ANTES de actualizar los datos nuevos
     """
     from datetime import datetime
-    
+
     cur = conn.cursor() if conn else cursor
     fecha_cambio = datetime.now().isoformat()
-    
+
     cur.execute(
         """INSERT INTO registro_cambios 
            (Dispositivos_serial, user, processor, GPU, RAM, disk, license_status, ip, date)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (serial, user, processor, gpu, ram, disk, license_status, ip, fecha_cambio)
+        (serial, user, processor, gpu, ram, disk, license_status, ip, fecha_cambio),
     )
-    
+
     if not conn:
         connection.commit()
 
-    
+
 def limpiar_datos_dispositivo_threadsafe(serial, conn):
     """Limpia todos los datos anteriores de un dispositivo antes de insertar nuevos.
 
@@ -508,4 +516,3 @@ def limpiar_datos_dispositivo_threadsafe(serial, conn):
     cur.execute(
         "DELETE FROM informacion_diagnostico WHERE Dispositivos_serial = ?", (serial,)
     )
- 

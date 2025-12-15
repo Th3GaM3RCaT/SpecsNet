@@ -85,7 +85,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.ui = Ui_MainWindow()
-        
+
         self.ui.setupUi(self)
         qss_path = self.property("qss_file")
         if qss_path:
@@ -93,12 +93,11 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             qss_path = os.path.join(base_dir, qss_path)
             with open(qss_path, "r") as f:
                 self.setStyleSheet(f.read())
-       
 
         # Hilos para operaciones de red
         self.hilo_servidor = None
         self.hilo_escaneo = None
-        self.hilo_escaneo_rangos = None        
+        self.hilo_escaneo_rangos = None
         self.hilo_consulta = None
         self.hilo_procesamiento = None
         self.procesamiento_en_curso = False
@@ -130,7 +129,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         # Botones de exportación
         self.ui.actionExportarExcel.triggered.connect(self.exportar_xlsx)
         self.ui.actionExportarCSV.triggered.connect(self.exportar_csv)
-        
+
         # Acciones del menú
         self.ui.actionSalir.triggered.connect(self.salir_aplicacion)
         self.ui.actionVerEstadisticas.triggered.connect(self.ver_estadisticas)
@@ -139,7 +138,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.ui.actionBackupBD.triggered.connect(self.hacer_backup)
         self.ui.actionAcercaDe.triggered.connect(self.acerca_de)
         self.ui.actionManual.triggered.connect(self.abrir_manual)
-        
+
         self.configurar_tabla()
 
         # Deshabilitar botones hasta seleccionar dispositivo
@@ -158,7 +157,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.timer_consulta_diaria = QtCore.QTimer(self)
         self.timer_consulta_diaria.timeout.connect(self.consulta_diaria_clientes)
         self.timer_consulta_diaria.start(86400000)  # 86400000 ms = 24 horas
-        
+
     def cargar_datos_iniciales(self):
         """Carga datos de la DB. Si no hay datos, inicia actualización automática."""
         try:
@@ -359,7 +358,6 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
         except Exception as e:
             print(f"Error consultando base de datos: {e}")
-            
 
             print_exc()
             self.ui.statusbar.showMessage(f"ERROR: Error cargando datos: {e}", 5000)
@@ -421,11 +419,13 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 # Ejecutar todos los pings en paralelo
                 BATCH_SIZE = 25
                 resultados_batch = []
-                for i in range (0, len(tareas), BATCH_SIZE):
-                    batch = tareas[i:i + BATCH_SIZE]
-                    resultados_batch.extend( await gather(*batch, return_exceptions=True))
+                for i in range(0, len(tareas), BATCH_SIZE):
+                    batch = tareas[i : i + BATCH_SIZE]
+                    resultados_batch.extend(
+                        await gather(*batch, return_exceptions=True)
+                    )
                     await sleep(0.1)  # Pequeña pausa entre batches
-                return resultados_batch 
+                return resultados_batch
                 # TODO: posible integracion consulta datos
 
             # Ejecutar verificación asíncrona
@@ -470,7 +470,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                         print("[INFO] Consulta omitida - ya hay una en curso")
                 except Exception as e:
                     print(f"[WARN] No se pudo iniciar consulta post-ping: {e}")
-                
+
         self.hilo_verificacion = Hilo(verificar_estados)
         self.hilo_verificacion.terminado.connect(callback_estados)
         self.hilo_verificacion.start()
@@ -742,17 +742,30 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
             try:
                 for i in range(0, total, 10):  # Procesar en lotes de 10
-                    lote = ips_list[i:i+10]
+                    lote = ips_list[i : i + 10]
 
                     for ip in lote:
                         # Verificar si ya existe en DB
-                        sql, params = abrir_consulta("Dispositivos-select.sql", {"ip": ip})
+                        sql, params = abrir_consulta(
+                            "Dispositivos-select.sql", {"ip": ip}
+                        )
                         cursor.execute(sql, params)
                         if not cursor.fetchone():
                             # Crear serial temporal único
                             serial_temp = f"TEMP_IP_{ip.replace('.', '_')}"
                             info_basico = (
-                                serial_temp, 0, "", "", "", "", "", "", 0, "", ip, 1
+                                serial_temp,
+                                0,
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                0,
+                                "",
+                                ip,
+                                1,
                             )
                             setDevice(info_basico)
 
@@ -760,15 +773,18 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
                         # Reportar progreso cada 10 IPs
                         if callback_progreso and procesadas % 10 == 0:
-                            callback_progreso({
-                                'tipo': 'procesamiento_db',
-                                'procesadas': procesadas,
-                                'total': total,
-                                'mensaje': f"Procesando DB: {procesadas}/{total} IPs"
-                            })
+                            callback_progreso(
+                                {
+                                    "tipo": "procesamiento_db",
+                                    "procesadas": procesadas,
+                                    "total": total,
+                                    "mensaje": f"Procesando DB: {procesadas}/{total} IPs",
+                                }
+                            )
 
                     # Pequeña pausa para no bloquear completamente
                     from time import sleep
+
                     sleep(0.01)
 
                 return total
@@ -787,24 +803,28 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         self.hilo_procesamiento.error.connect(self.on_procesamiento_error)
         self.hilo_procesamiento.start()
 
-        self.ui.statusbar.showMessage("Procesando IPs encontradas en base de datos...", 0)
+        self.ui.statusbar.showMessage(
+            "Procesando IPs encontradas en base de datos...", 0
+        )
 
     def on_procesamiento_progreso(self, datos):
         """Muestra progreso del procesamiento de DB"""
-        if datos.get('tipo') == 'procesamiento_db':
-            procesadas = datos.get('procesadas', 0)
-            total = datos.get('total', 0)
-            mensaje = datos.get('mensaje', '')
+        if datos.get("tipo") == "procesamiento_db":
+            procesadas = datos.get("procesadas", 0)
+            total = datos.get("total", 0)
+            mensaje = datos.get("mensaje", "")
             self.ui.statusbar.showMessage(mensaje, 0)
             print(f">> {mensaje}")
 
     def on_procesamiento_terminado(self, resultado, ips_list):
         """Finaliza procesamiento de IPs"""
         self.procesamiento_en_curso = False  # Resetear flag
-        
+
         if resultado > 0:
             print(f">> Procesadas {resultado} IPs en DB")
-            self.ui.statusbar.showMessage(f"DB actualizada con {resultado} nuevas IPs", 3000)
+            self.ui.statusbar.showMessage(
+                f"DB actualizada con {resultado} nuevas IPs", 3000
+            )
 
             # Recargar tabla con datos actualizados (sin ping para no demorar más)
             self.cargar_dispositivos(verificar_ping=False)
@@ -817,7 +837,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def on_procesamiento_error(self, error):
         """Error en procesamiento de DB"""
         self.procesamiento_en_curso = False  # Resetear flag en error también
-        
+
         self.ui.statusbar.showMessage(f"Error procesando DB: {error}", 5000)
         print(f"Error en procesamiento de DB: {error}")
 
@@ -888,7 +908,6 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             # Reiniciar timer de verificación automática
             if hasattr(self, "timer_estados") and self.timer_estados:
                 self.timer_estados.start()
-
 
     def ver_aplicaciones(self):
         """Abre ventana de aplicaciones instaladas"""
@@ -1211,36 +1230,37 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             f">> Paso 2/4: DB poblada ({insertados} nuevos) - Anunciando servidor...", 0
         )
         # Paso 3: Anunciar servidor y esperar conexiones
-        self.anunciar_y_esperar_clientes() 
+        self.anunciar_y_esperar_clientes()
+
     def consulta_diaria_clientes(self):
         """Ejecuta consulta automática de clientes a las 2 AM diariamente"""
         from datetime import datetime
-        
+
         # Verificar si ya hay una consulta en curso
         if self.consulta_en_curso:
             print("[INFO] Ya hay una consulta en curso, omitiendo consulta diaria")
             return
-        
+
         hora_actual = datetime.now().hour
         # TODO: permitir cambiar manualmente en configuración
         # Solo ejecutar entre 2 AM y 3 AM (horario de baja carga)
         if hora_actual != 2:
             return  # Esperar al próximo ciclo
-        
+
         print("\n=== Consulta Diaria Automática (2:00 AM) ===")
         print(f">> Iniciando a las {datetime.now().strftime('%H:%M:%S')}")
-        
+
         self.ui.statusbar.showMessage("Ejecutando consulta diaria de clientes...", 0)
         self.anunciar_y_esperar_clientes()
 
     def anunciar_y_esperar_clientes(self):
         """Paso 3: Consulta cada cliente directamente con actualizaciones en tiempo real (sin broadcasts)"""
-        
+
         # Evitar consultas simultáneas
         if self.consulta_en_curso:
             print("[INFO] Ya hay una consulta en curso - omitiendo")
             return
-        
+
         self.consulta_en_curso = True
         print("[INFO] Iniciando consulta de clientes...")
 
@@ -1266,21 +1286,19 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
 
             except Exception as e:
                 print(f">> Error en consulta: {e}")
-                
 
                 print_exc()
                 return (0, 0)
+
     def on_consulta_terminada(self, resultado):
         """Callback Paso 3 completado"""
         self.consulta_en_curso = False
-        
+
         activos, total = resultado
         self.ui.statusbar.showMessage(
             f">> Paso 3/4: {activos}/{total} clientes respondieron - Actualizando vista...",
             0,
         )
-
-
 
         # Reiniciar timer de verificación automática
         if hasattr(self, "timer_estados") and self.timer_estados:
@@ -1309,7 +1327,6 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 )
             except Exception as e:
                 print(f">> Error en escaneo: {e}")
-                
 
                 print_exc()
                 return []
@@ -1352,61 +1369,69 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         try:
             from logica.exportar_datos import exportar_con_estado_actual
             from PySide6.QtWidgets import QMessageBox, QFileDialog
-            
+
             # Preguntar al usuario dónde guardar
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             nombre_sugerido = f"inventario_{timestamp}.csv"
-            
+
             ruta_archivo, _ = QFileDialog.getSaveFileName(
                 self,
                 "Guardar archivo CSV",
                 nombre_sugerido,
-                "Archivos CSV (*.csv);;Todos los archivos (*.*)"
+                "Archivos CSV (*.csv);;Todos los archivos (*.*)",
             )
-            
+
             if not ruta_archivo:
                 return  # Usuario canceló
-            
+
             # Exportar usando la conexión de la DB
             self.ui.statusbar.showMessage("Exportando datos a CSV...", 2000)
-            
+
             # Usar la función de exportación con estado actual
             from logica.exportar_datos import exportar_dispositivos_completo
             from sql.ejecutar_sql import connection
-            
+
             # Generar archivo temporal primero
-            ruta_temp = exportar_dispositivos_completo(connection, formato="csv", incluir_inactivos=True)
-            
+            ruta_temp = exportar_dispositivos_completo(
+                connection, formato="csv", incluir_inactivos=True
+            )
+
             # Mover a la ubicación elegida por el usuario
             import shutil
+
             shutil.move(ruta_temp, ruta_archivo)
-            
-            self.ui.statusbar.showMessage(f"Datos exportados exitosamente a: {ruta_archivo}", 5000)
-            
+
+            self.ui.statusbar.showMessage(
+                f"Datos exportados exitosamente a: {ruta_archivo}", 5000
+            )
+
             # Mostrar mensaje de confirmación
             QMessageBox.information(
                 self,
                 "Exportación Exitosa",
                 f"Los datos se han exportado correctamente a:\n\n{ruta_archivo}\n\n"
-                f"El archivo puede ser abierto directamente en Microsoft Excel."
+                f"El archivo puede ser abierto directamente en Microsoft Excel.",
             )
-            
+
             # Abrir carpeta contenedora
             from pathlib import Path
             import subprocess
+
             carpeta = Path(ruta_archivo).parent
             subprocess.run(["explorer", str(carpeta)])
-            
+
         except Exception as e:
             print(f"[ERROR] Error al exportar CSV: {e}")
             from traceback import print_exc
+
             print_exc()
-            
+
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
                 self,
                 "Error de Exportación",
-                f"No se pudo exportar los datos:\n\n{str(e)}"
+                f"No se pudo exportar los datos:\n\n{str(e)}",
             )
 
     def exportar_xlsx(self):
@@ -1415,7 +1440,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             from logica.exportar_datos import exportar_dispositivos_completo
             from PySide6.QtWidgets import QMessageBox, QFileDialog
             from sql.ejecutar_sql import connection
-            
+
             # Verificar que openpyxl esté instalado
             try:
                 import openpyxl
@@ -1426,75 +1451,83 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                     "Para exportar a formato XLSX se requiere el paquete 'openpyxl'.\n\n"
                     "Instálelo ejecutando:\n"
                     "pip install openpyxl\n\n"
-                    "Mientras tanto, puede usar la opción 'Exportar a CSV' que no requiere paquetes adicionales."
+                    "Mientras tanto, puede usar la opción 'Exportar a CSV' que no requiere paquetes adicionales.",
                 )
                 return
-            
+
             # Preguntar al usuario dónde guardar
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             nombre_sugerido = f"inventario_{timestamp}.xlsx"
-            
+
             ruta_archivo, _ = QFileDialog.getSaveFileName(
                 self,
                 "Guardar archivo Excel",
                 nombre_sugerido,
-                "Archivos Excel (*.xlsx);;Todos los archivos (*.*)"
+                "Archivos Excel (*.xlsx);;Todos los archivos (*.*)",
             )
-            
+
             if not ruta_archivo:
                 return  # Usuario canceló
-            
+
             # Exportar
             self.ui.statusbar.showMessage("Exportando datos a Excel (XLSX)...", 2000)
-            
+
             # Generar archivo temporal primero
-            ruta_temp = exportar_dispositivos_completo(connection, formato="xlsx", incluir_inactivos=True)
-            
+            ruta_temp = exportar_dispositivos_completo(
+                connection, formato="xlsx", incluir_inactivos=True
+            )
+
             # Mover a la ubicación elegida por el usuario
             import shutil
+
             shutil.move(ruta_temp, ruta_archivo)
-            
-            self.ui.statusbar.showMessage(f"Datos exportados exitosamente a: {ruta_archivo}", 5000)
-            
+
+            self.ui.statusbar.showMessage(
+                f"Datos exportados exitosamente a: {ruta_archivo}", 5000
+            )
+
             # Mostrar mensaje de confirmación
             QMessageBox.information(
                 self,
                 "Exportación Exitosa",
                 f"Los datos se han exportado correctamente a:\n\n{ruta_archivo}\n\n"
-                f"El archivo Excel incluye formato enriquecido y está listo para usar."
+                f"El archivo Excel incluye formato enriquecido y está listo para usar.",
             )
-            
+
             # Abrir carpeta contenedora
             from pathlib import Path
             import subprocess
+
             carpeta = Path(ruta_archivo).parent
             subprocess.run(["explorer", str(carpeta)])
-            
+
         except Exception as e:
             print(f"[ERROR] Error al exportar XLSX: {e}")
             from traceback import print_exc
+
             print_exc()
-            
+
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
                 self,
                 "Error de Exportación",
-                f"No se pudo exportar los datos:\n\n{str(e)}"
+                f"No se pudo exportar los datos:\n\n{str(e)}",
             )
 
     def salir_aplicacion(self):
         """Cierra la aplicación de forma segura."""
         from PySide6.QtWidgets import QMessageBox
-        
+
         respuesta = QMessageBox.question(
             self,
             "Confirmar Salida",
-            "¿Está seguro que desea salir de la aplicación?\n\n" 
+            "¿Está seguro que desea salir de la aplicación?\n\n"
             "El servidor TCP se detendrá y no recibirá datos de clientes.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
-        
+
         if respuesta == QMessageBox.StandardButton.Yes:
             print("[INFO] Cerrando aplicación...")
             self.close()
@@ -1502,21 +1535,29 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
     def ver_estadisticas(self):
         """Muestra estadísticas del inventario."""
         try:
-            from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem
-            
+            from PySide6.QtWidgets import (
+                QDialog,
+                QVBoxLayout,
+                QLabel,
+                QPushButton,
+                QTableWidget,
+                QTableWidgetItem,
+            )
+
             # Consultar estadísticas
             stats = {}
-            
+
             # Total de dispositivos
             cursor.execute("SELECT COUNT(*) FROM Dispositivos")
-            stats['total'] = cursor.fetchone()[0]
-            
+            stats["total"] = cursor.fetchone()[0]
+
             # Dispositivos activos
             cursor.execute("SELECT COUNT(*) FROM Dispositivos WHERE activo = 1")
-            stats['activos'] = cursor.fetchone()[0]
-            
+            stats["activos"] = cursor.fetchone()[0]
+
             # Dispositivos encendidos (último estado)
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(DISTINCT Dispositivos_serial) 
                 FROM activo 
                 WHERE powerOn = 1 
@@ -1525,40 +1566,43 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                     FROM activo 
                     GROUP BY Dispositivos_serial
                 )
-            """)
-            stats['encendidos'] = cursor.fetchone()[0]
-            
+            """
+            )
+            stats["encendidos"] = cursor.fetchone()[0]
+
             # Sin licencia
             cursor.execute("SELECT COUNT(*) FROM Dispositivos WHERE license_status = 0")
-            stats['sin_licencia'] = cursor.fetchone()[0]
-            
+            stats["sin_licencia"] = cursor.fetchone()[0]
+
             # RAM promedio
             cursor.execute("SELECT AVG(RAM) FROM Dispositivos WHERE RAM > 0")
             ram_avg = cursor.fetchone()[0]
-            stats['ram_promedio'] = round(ram_avg, 2) if ram_avg else 0
-            
+            stats["ram_promedio"] = round(ram_avg, 2) if ram_avg else 0
+
             # Fabricantes de RAM más comunes
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT fabricante, COUNT(*) as cant 
                 FROM memoria 
                 WHERE actual = 1 AND fabricante IS NOT NULL AND fabricante != ''
                 GROUP BY fabricante 
                 ORDER BY cant DESC 
                 LIMIT 3
-            """)
+            """
+            )
             fabricantes = cursor.fetchall()
-            
+
             # Crear diálogo
             dialog = QDialog(self)
             dialog.setWindowTitle("Estadísticas del Inventario")
             dialog.resize(500, 400)
-            
+
             layout = QVBoxLayout(dialog)
-            
+
             # Título
             titulo = QLabel("<h2>Resumen del Inventario</h2>")
             layout.addWidget(titulo)
-            
+
             # Estadísticas generales
             texto_stats = f"""
             <p><b>Total de Dispositivos:</b> {stats['total']}</p>
@@ -1567,79 +1611,87 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             <p><b>Sin Licencia:</b> {stats['sin_licencia']}</p>
             <p><b>RAM Promedio:</b> {stats['ram_promedio']} GB</p>
             """
-            
+
             label_stats = QLabel(texto_stats)
             layout.addWidget(label_stats)
-            
+
             # Fabricantes de RAM
             if fabricantes:
                 label_fab = QLabel("<h3>Fabricantes de RAM Más Comunes</h3>")
                 layout.addWidget(label_fab)
-                
+
                 for fab, cant in fabricantes:
                     label = QLabel(f"• {fab}: {cant} módulos")
                     layout.addWidget(label)
-            
+
             # Botón cerrar
             btn_cerrar = QPushButton("Cerrar")
             btn_cerrar.clicked.connect(dialog.close)
             layout.addWidget(btn_cerrar)
-            
+
             dialog.exec()
-            
+
         except Exception as e:
             print(f"[ERROR] Error mostrando estadísticas: {e}")
             from traceback import print_exc
+
             print_exc()
 
     def ver_reportes(self):
         """Genera y muestra reportes del sistema."""
         from PySide6.QtWidgets import QMessageBox
-        
+
         QMessageBox.information(
             self,
             "Reportes",
             "Funcionalidad de reportes en desarrollo.\n\n"
-            "Por ahora puede usar las opciones de exportación para generar reportes en Excel."
+            "Por ahora puede usar las opciones de exportación para generar reportes en Excel.",
         )
 
     def abrir_configuracion(self):
         """Abre el diálogo de configuración."""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFormLayout
-        
+        from PySide6.QtWidgets import (
+            QDialog,
+            QVBoxLayout,
+            QLabel,
+            QPushButton,
+            QLineEdit,
+            QFormLayout,
+        )
+
         dialog = QDialog(self)
         dialog.setWindowTitle("Configuración del Servidor")
         dialog.resize(400, 300)
-        
+
         layout = QVBoxLayout(dialog)
-        
+
         # Título
         titulo = QLabel("<h2>Configuración</h2>")
         layout.addWidget(titulo)
-        
+
         # Formulario
         form_layout = QFormLayout()
-        
+
         # Puerto del servidor
         puerto_input = QLineEdit("5255")
         puerto_input.setEnabled(False)  # Solo lectura por ahora
         form_layout.addRow("Puerto TCP:", puerto_input)
-        
+
         # Intervalo de verificación
         intervalo_input = QLineEdit("20")
         form_layout.addRow("Intervalo verificación (s):", intervalo_input)
-        
+
         layout.addLayout(form_layout)
-        
+
         # Nota
         nota = QLabel("<i>Nota: Los cambios requieren reiniciar el servidor</i>")
         layout.addWidget(nota)
-        
+
         # Botones
         btn_cerrar = QPushButton("Cerrar")
         btn_cerrar.clicked.connect(dialog.close)
         layout.addWidget(btn_cerrar)
-        
+
         dialog.exec()
 
     def hacer_backup(self):
@@ -1649,67 +1701,67 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             import shutil
             from pathlib import Path
             import sys
-            
+
             output_dir = project_root / "data"
-            
+
             # Obtener ruta de la base de datos actual
             if hasattr(sys, "_MEIPASS"):
                 db_actual = Path("specs.db")
             else:
                 db_actual = output_dir / "specs.db"
-            
+
             if not db_actual.exists():
                 QMessageBox.warning(
                     self,
                     "Error de Backup",
-                    "No se encontró la base de datos para hacer backup."
+                    "No se encontró la base de datos para hacer backup.",
                 )
                 return
-            
+
             # Preguntar dónde guardar el backup
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             nombre_sugerido = f"specs_backup_{timestamp}.db"
-            
+
             ruta_backup, _ = QFileDialog.getSaveFileName(
                 self,
                 "Guardar Backup de Base de Datos",
                 nombre_sugerido,
-                "Base de Datos SQLite (*.db);;Todos los archivos (*.*)"
+                "Base de Datos SQLite (*.db);;Todos los archivos (*.*)",
             )
-            
+
             if not ruta_backup:
                 return  # Usuario canceló
-            
+
             # Cerrar conexión temporalmente para hacer backup seguro
             connection.commit()
-            
+
             # Copiar archivo
             shutil.copy2(db_actual, ruta_backup)
-            
+
             self.ui.statusbar.showMessage(f"Backup guardado: {ruta_backup}", 5000)
-            
+
             QMessageBox.information(
                 self,
                 "Backup Exitoso",
-                f"La base de datos se ha respaldado correctamente en:\n\n{ruta_backup}"
+                f"La base de datos se ha respaldado correctamente en:\n\n{ruta_backup}",
             )
-            
+
         except Exception as e:
             print(f"[ERROR] Error al hacer backup: {e}")
             from traceback import print_exc
+
             print_exc()
-            
+
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
-                self,
-                "Error de Backup",
-                f"No se pudo realizar el backup:\n\n{str(e)}"
+                self, "Error de Backup", f"No se pudo realizar el backup:\n\n{str(e)}"
             )
 
     def acerca_de(self):
         """Muestra información sobre la aplicación."""
         from PySide6.QtWidgets import QMessageBox
-        
+
         QMessageBox.about(
             self,
             "Acerca de SpecsNet",
@@ -1726,7 +1778,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
             "<li>Exportación a Excel (CSV/XLSX)</li>"
             "</ul>"
             "<br>"
-            "<p><i>© 2025 - Área de Informática</i></p>"
+            "<p><i>© 2025 - Área de Informática</i></p>",
         )
 
     def abrir_manual(self):
@@ -1734,12 +1786,12 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
         from PySide6.QtWidgets import QMessageBox
         from pathlib import Path
         import subprocess
-        
+
         # Buscar archivo de documentación
         docs_dir = Path(__file__).parent.parent.parent / "docs"
         readme = docs_dir / "README.md"
         exportacion = docs_dir / "EXPORTACION.md"
-        
+
         if exportacion.exists():
             # Abrir con el editor predeterminado
             try:
@@ -1748,7 +1800,7 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 QMessageBox.information(
                     self,
                     "Manual",
-                    f"Manual de exportación disponible en:\n\n{exportacion}"
+                    f"Manual de exportación disponible en:\n\n{exportacion}",
                 )
         else:
             QMessageBox.information(
@@ -1762,8 +1814,9 @@ class InventarioWindow(QMainWindow, Ui_MainWindow):
                 "<br>"
                 "<p><i>Para más información, consulte la documentación en docs/</i></p>"
                 "<p><i>O revise el repositorio en GitHub:</i></p>"
-                "<p><a href=\"https://github.com/Th3GaM3RCaT/SpecsNet\">https://github.com/Th3GaM3RCaT/SpecsNet</a></p>"
+                '<p><a href="https://github.com/Th3GaM3RCaT/SpecsNet">https://github.com/Th3GaM3RCaT/SpecsNet</a></p>',
             )
+
 
 def main():
     app = QtWidgets.QApplication.instance()
@@ -1773,6 +1826,9 @@ def main():
     window = InventarioWindow()
     window.show()
     import sys
+
     sys.exit(app.exec())
+
+
 if __name__ == "__main__":
     main()

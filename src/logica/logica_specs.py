@@ -6,6 +6,7 @@ from pathlib import Path
 from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket
 from subprocess import CREATE_NO_WINDOW, run
 import sys
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -200,6 +201,7 @@ def preparar_datos_completos():
     # Agregar informe DirectX si existe
     try:
         from config.security_config import OUTPUT_DIR
+
         output_dir = Path(__file__).parent.parent.parent / OUTPUT_DIR
         dxdiag_file = output_dir / "dxdiag_output.txt"
 
@@ -210,6 +212,7 @@ def preparar_datos_completos():
         else:
             _print_status("[WARN] No se encontro dxdiag_output.txt")
             from datos.informeDirectX import get_from_inform
+
             get_from_inform()
             with open(dxdiag_file, "r", encoding="cp1252") as f:
                 new["dxdiag_output_txt"] = f.read()
@@ -294,11 +297,11 @@ def enviar_a_servidor(server_ip=None):
     # Importar seguridad si está disponible
     from sys import path
     from pathlib import Path
+
     generate_auth_token = None
     security_available = False
 
     try:
-
 
         # Agregar directorio config al path
         config_dir = Path(__file__).parent.parent.parent / "config"
@@ -387,28 +390,28 @@ def enviar_a_servidor(server_ip=None):
         except ImportError:
             USE_TLS = True  # Por defecto usar TLS
             TLS_CERT_PATH = "config/server.crt"
-        
+
         cliente = socket(AF_INET, SOCK_STREAM)
-        
+
         if USE_TLS:
             import ssl
             from pathlib import Path
-            
+
             cert_path = Path(TLS_CERT_PATH)
             if not cert_path.exists():
                 # Buscar en ruta alternativa
                 cert_path = Path(__file__).parent.parent.parent / TLS_CERT_PATH
-            
+
             if not cert_path.exists():
                 _print_status(f"[ERROR] Certificado TLS no encontrado: {TLS_CERT_PATH}")
                 _print_status(f"[INFO] Desactiva TLS con USE_TLS=false en .env")
                 return
-            
+
             context = ssl.create_default_context()
             context.check_hostname = False  # Permitir IPs locales
             context.verify_mode = ssl.CERT_REQUIRED
             context.load_verify_locations(str(cert_path))
-            
+
             client_ssl = context.wrap_socket(cliente, server_hostname=HOST)
             client_ssl.connect((HOST, tcp_port))
             client_ssl.sendall(dumps(new).encode("utf-8"))

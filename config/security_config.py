@@ -30,7 +30,7 @@ except ImportError:
 # Token compartido para autenticación cliente-servidor
 SHARED_SECRET = os.getenv("SHARED_SECRET", "CHANGE_ME_TO_RANDOM_TOKEN")
 
-default_pattern = r"^([1-9]|[1-9][0-9]|(1)[0-9][0-9]|(2)[0-4][0-9]|(25)[0-5])(\.([0-9]|[1-9][0-9]|(1)[0-9][0-9]|(2)[0-4][0-9]|(25)[0-5])){3}$" # Patrón por defecto para validar cualquier IP IPv4 entre 1.0.0.0 y 255.255.255.255
+default_pattern = r"^([1-9]|[1-9][0-9]|(1)[0-9][0-9]|(2)[0-4][0-9]|(25)[0-5])(\.([0-9]|[1-9][0-9]|(1)[0-9][0-9]|(2)[0-4][0-9]|(25)[0-5])){3}$"  # Patrón por defecto para validar cualquier IP IPv4 entre 1.0.0.0 y 255.255.255.255
 PATTERN = os.getenv("IP_PATTERN", default_pattern)
 
 # Redes permitidas (whitelist de subnets)

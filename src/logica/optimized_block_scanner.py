@@ -82,7 +82,9 @@ except ImportError:
 
 DEFAULT_PER_HOST_TIMEOUT = 0.8
 DEFAULT_PER_SUBNET_TIMEOUT = 8.0
-DEFAULT_CONCURRENCY = 50  # Reducido de 300 para evitar sobrecarga del sistema con rangos grandes
+DEFAULT_CONCURRENCY = (
+    50  # Reducido de 300 para evitar sobrecarga del sistema con rangos grandes
+)
 DEFAULT_PROBE_TIMEOUT = 0.9
 CSV_PREFIX = "optimized_scan"
 project_root = Path(__file__).parent.parent.parent
@@ -339,7 +341,8 @@ async def scan_blocks(
             else:
                 start_ip = end_ip = range_str
             from logica.scan_rangos_ip import calculate_ip_range
-            subnet1, subnet2 = calculate_ip_range(start_ip, end_ip) # type: ignore
+
+            subnet1, subnet2 = calculate_ip_range(start_ip, end_ip)  # type: ignore
             total_ips += subnet1.num_addresses
             if subnet2:
                 total_ips += subnet2.num_addresses
@@ -349,12 +352,16 @@ async def scan_blocks(
     # Ajustar concurrencia basada en tamaño del rango para evitar sobrecarga
     if total_ips > 500:  # Rangos muy grandes
         adjusted_concurrency = min(concurrency, 25)  # Máximo 25 para rangos grandes
-        print(f"[OPTIMIZACION] Rango grande detectado ({total_ips} IPs). Concurrencia ajustada: {concurrency} -> {adjusted_concurrency}")
+        print(
+            f"[OPTIMIZACION] Rango grande detectado ({total_ips} IPs). Concurrencia ajustada: {concurrency} -> {adjusted_concurrency}"
+        )
         concurrency = adjusted_concurrency
     elif total_ips > 100:  # Rangos medianos
         adjusted_concurrency = min(concurrency, 50)  # Máximo 50 para rangos medianos
         if adjusted_concurrency != concurrency:
-            print(f"[OPTIMIZACION] Rango mediano detectado ({total_ips} IPs). Concurrencia ajustada: {concurrency} -> {adjusted_concurrency}")
+            print(
+                f"[OPTIMIZACION] Rango mediano detectado ({total_ips} IPs). Concurrencia ajustada: {concurrency} -> {adjusted_concurrency}"
+            )
             concurrency = adjusted_concurrency
 
     print(f"[CONFIG] Concurrencia final: {concurrency} operaciones simultáneas")
@@ -371,6 +378,7 @@ async def scan_blocks(
         # Generar red
         try:
             from logica.scan_rangos_ip import calculate_ip_range
+
             subnet1, subnet2 = calculate_ip_range(start_ip, end_ip)  # type: ignore
             subnets = [subnet1]
             if subnet2:
@@ -507,6 +515,7 @@ def main(callback_progreso=None, ranges=None):
     # Si se pasan rangos directamente, usarlos; si no, parsear argumentos
     if ranges:
         from types import SimpleNamespace
+
         args = SimpleNamespace(
             ranges=ranges,
             chunk_size=256,
@@ -514,7 +523,7 @@ def main(callback_progreso=None, ranges=None):
             per_subnet_timeout=5.0,
             concurrency=100,
             probe_timeout=0.5,
-            use_broadcast_probe=False
+            use_broadcast_probe=False,
         )
     else:
         args = parse_args()
@@ -571,7 +580,9 @@ def main(callback_progreso=None, ranges=None):
     print(f"[DEBUG] Retornando {len(merged)} IPs sin lookup de MAC")
 
     # Estadísticas
-    print(f"[RESULTADO] {len(merged)} IPs activas encontradas (MACs serán enviadas por clientes)")
+    print(
+        f"[RESULTADO] {len(merged)} IPs activas encontradas (MACs serán enviadas por clientes)"
+    )
 
     # Notificar resultado final
     if callback_progreso:
@@ -649,6 +660,7 @@ def main(callback_progreso=None, ranges=None):
     # 5. Copiar CSV sin poblar MACs (los clientes enviarán sus MACs)
     try:
         import shutil
+
         shutil.copy2(temp_csv, CSV_FILENAME)
         print(f"[OK] CSV guardado: '{CSV_FILENAME}' con {len(merged)} dispositivos")
         print("   - MACs serán enviadas por los clientes al conectarse")

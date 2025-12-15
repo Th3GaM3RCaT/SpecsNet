@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives import serialization
 from datetime import datetime, timedelta
 from pathlib import Path
 
+
 def generar_certificado(
     organization="TuOrganización",
     country="ES",
@@ -147,7 +148,9 @@ def generar_certificado(
     print()
     print(f"📅 VALIDEZ:")
     print(f"   • Válido desde: {datetime.utcnow().strftime('%Y-%m-%d')}")
-    print(f"   • Válido hasta: {(datetime.utcnow() + timedelta(days=days_valid)).strftime('%Y-%m-%d')}")
+    print(
+        f"   • Válido hasta: {(datetime.utcnow() + timedelta(days=days_valid)).strftime('%Y-%m-%d')}"
+    )
     print(f"   • Duración: {days_valid} días ({days_valid // 365} años)")
     print()
     print(f"🔐 ARCHIVOS:")

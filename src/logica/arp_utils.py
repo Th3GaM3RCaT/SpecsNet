@@ -40,7 +40,9 @@ def parse_arp_table():
                 if m:
                     entries.append((m.group("ip"), m.group("mac").lower()))
             if entries:
-                print(f"[DEBUG] parse_arp_table: Método ip neigh encontró {len(entries)} entradas")
+                print(
+                    f"[DEBUG] parse_arp_table: Método ip neigh encontró {len(entries)} entradas"
+                )
                 return _deduplicate_entries(entries)
     except FileNotFoundError:
         print("[DEBUG] parse_arp_table: ip neigh no disponible")
@@ -61,7 +63,9 @@ def parse_arp_table():
             creationflags=CREATE_NO_WINDOW if system() == "Windows" else 0,
         )
         out = (proc.stdout or "") + (proc.stderr or "")
-        print(f"[DEBUG] parse_arp_table: arp -a retornó {len(out)} caracteres de output")
+        print(
+            f"[DEBUG] parse_arp_table: arp -a retornó {len(out)} caracteres de output"
+        )
 
         for line in out.splitlines():
             # Patrón para formato (192.168.1.1) at aa:bb:cc:dd:ee:ff
@@ -79,7 +83,9 @@ def parse_arp_table():
             if m:
                 mac = m.group("mac").replace("-", ":").lower()
                 entries.append((m.group("ip"), mac))
-        print(f"[DEBUG] parse_arp_table: Método arp -a encontró {len(entries)} entradas")
+        print(
+            f"[DEBUG] parse_arp_table: Método arp -a encontró {len(entries)} entradas"
+        )
     except Exception as e:
         print(f"[DEBUG] parse_arp_table: Error en arp -a: {e}")
         pass

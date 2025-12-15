@@ -5,6 +5,7 @@ from json import dumps
 from pathlib import Path
 from os import chdir
 from sys import path as sys_path
+
 project_root = Path(__file__).parent.parent
 sys_path.insert(0, str(project_root))
 chdir(project_root)
@@ -52,6 +53,7 @@ def escuchar_solicitudes(port=5256):
                     if data == "GET_SPECS":
                         print("[PROCESO] Recopilando especificaciones...")
                         from logica.logica_specs import enviar_a_servidor
+
                         enviar_a_servidor()
                         print("[OK] Datos enviados")
 
@@ -137,9 +139,7 @@ else:
             """Inicializa señales y conexiones de la UI."""
             self.run_button.clicked.connect(self.iniciar_informe)
             self.send_button.clicked.connect(self.enviar)
-            self.actionCancelTask.triggered.connect(
-                lambda: lsp.configurar_tarea(2)
-            )
+            self.actionCancelTask.triggered.connect(lambda: lsp.configurar_tarea(2))
             self.actionScheduleTaskTime.triggered.connect(
                 lambda: lsp.configurar_tarea(0)
             )
@@ -196,9 +196,12 @@ else:
             """Envía especificaciones al servidor."""
             self.statusbar.showMessage(" Preparando envío de datos...", 2000)
             self.send_button.setEnabled(False)
-            from pathlib import Path # lazy import
-            from config.security_config import OUTPUT_DIR # lazy import
-            output_dir = Path(__file__).parent.parent.parent / OUTPUT_DIR / "salida.json"
+            from pathlib import Path  # lazy import
+            from config.security_config import OUTPUT_DIR  # lazy import
+
+            output_dir = (
+                Path(__file__).parent.parent.parent / OUTPUT_DIR / "salida.json"
+            )
             with open(output_dir, "w", encoding="utf-8") as f:
                 dump(lsp.new, f, indent=4)
             self.hilo_enviar = Hilo(lsp.enviar_a_servidor)
@@ -216,7 +219,7 @@ else:
         else:
             window = MainWindow()
             window.show()
-            from sys import exit # lazy import
+            from sys import exit  # lazy import
 
             exit(app.exec())
 

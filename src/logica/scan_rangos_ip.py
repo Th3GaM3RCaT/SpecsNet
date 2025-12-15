@@ -19,13 +19,14 @@ def calculate_ip_range(ip_start="10.100.0.0", ip_end=None):
         ValueError: Si las direcciones IP no son válidas.
     """
     from config.security_config import PATTERN
+
     reg_ex = compile(PATTERN)
     global romper
     if not ip_start:
         # Retornar una red /32 por defecto en vez de None
         return (ipaddress.ip_network("10.100.0.0/32"), None)
     if not ip_end:
-        ip_end = ip_start [:-1] + str(int(ip_start[-1])+3)
+        ip_end = ip_start[:-1] + str(int(ip_start[-1]) + 3)
     try:
         a = reg_ex.match(ip_start)
         if not a:
