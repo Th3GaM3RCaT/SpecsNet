@@ -1,6 +1,5 @@
 import wmi
 
-
 def get_ram_info():
     c = wmi.WMI()
     ram_modules = []
